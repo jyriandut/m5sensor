@@ -58,8 +58,8 @@ CHANGELOG.md
 ### Connect
 
 1. On your phone or PC, connect to Wi-Fi:
-   **SSID:** `ATOM_LED_AP`
-   **Password:** `atom1234`
+   **SSID:** `M5Stack_Ap`
+   **Password:** `66666666`
 2. Open [http://192.168.4.1](http://192.168.4.1) in your browser.
 3. Use the color picker to change the LED.
 
