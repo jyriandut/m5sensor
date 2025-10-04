@@ -10,13 +10,17 @@
     </head>
     <body>
         <main class="container" x-data="ledApp()" x-init="init()">
-            <h1 x-data="{ message: 'Initial Configuration Page' }" x-text="message"></h1>
-            <div>
-                <span> Select color of the led:</span>
-                <span> color goes here background </span>
-            </div>
-            <section>
-                <h3>Select new color</h3>
+            <header>
+                <h1 x-data="{ message: 'Initial Configuration Page' }" x-text="message"></h1>
+                <div>
+                    <span> Select color of the led:</span>
+                    <span> color goes here background </span>
+                </div>
+            </header>
+            <article>
+                <header>
+                    <h3>Select new color</h3>
+                </header>
                 <div class="grid">
                     <label>
                         <input type="color" x-model="color" />
@@ -29,10 +33,12 @@
                 </div>
                 <p x-show="error" style="color:#b00020" x-text="error"></p>
                 <p x-show="ok" style="color:#1b5e20" x-text="ok"></p>
-            </section>
+            </article>
             <hr />
-            <section>
-                <h3> WiFi Settings (stored to flash)</h3>
+            <article>
+                <header>
+                    <h3> WiFi Settings (stored to flash)</h3>
+                </header>
                 <form>
                     <fieldset>
                         <label>
@@ -65,8 +71,7 @@
                         value="Save"
                     />
                 </form>
-                
-            </section>
+            </article>
         </main>
         <script src="alpine.min.js" defer></script>
         <script defer>
