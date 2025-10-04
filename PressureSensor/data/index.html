@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="color-scheme" content="light">
+        
+        <link rel="stylesheet" href="pico.lime.min.css">
+        <title>M5 Atom: Pressure sensor interface</title>
+    </head>
+    <body>
+        <main class="container" x-data="ledApp()" x-init="init()">
+            <h1 x-data="{ message: 'Initial Configuration Page' }" x-text="message"></h1>
+            <div>
+                <span> Select color of the led:</span>
+                <span> color goes here background </span>
+            </div>
+            <section>
+                <h3>Select new color</h3>
+                <div class="grid">
+                    <label>
+                        <input type="color" x-model="color" />
+                    </label>
+                    <button
+                        @click="applyColor"
+                        :aria-busy="busy"
+                        :disabled="busy"
+                    >Apply color</button>
+                </div>
+                <p x-show="error" style="color:#b00020" x-text="error"></p>
+                <p x-show="ok" style="color:#1b5e20" x-text="ok"></p>
+            </section>
+            <hr />
+            <section>
+                <h3> WiFi Settings (stored to flash)</h3>
+                <form>
+                    <fieldset>
+                        <label>
+                            WiFi SSID:
+                            <input
+                                name="ssid"
+                                placeholder="Some ssid"
+                            />
+                        </label>
+                        <label>
+                            WiFi password
+                            <input
+                                type="password"
+                                name="pass"
+                                placeholder=""
+                            />
+                        </label>
+                        <label>
+                            Authentication token (will be added later):
+                            <textarea
+                                type="textfield"
+                                name="token"
+                                placeholder=""
+                            ></textarea>
+                        </label>
+                    </fieldset>
+
+                    <input
+                        type="submit"
+                        value="Save"
+                    />
+                </form>
+                
+            </section>
+        </main>
+        <script src="alpine.min.js" defer></script>
+        <script defer>
+         function ledApp() {
+             return {
+                 busy: false,
+                 color: '#00ff00',
+                 currentColor: '#000000',
+                 msg: '',
+                 err: '',
+                 ok: '',
+
+                 async init() {
+                     try {
+                         const r = await fetch('/api/led');
+                         if (r.ok) {
+                             const data = await r.json();
+                             this.currentColor = data.color || this.currentColor;
+                             this.color = data.color || this.color;
+                         }
+                     } catch (_) { /* ignore on first load */ }
+                 },
+
+                 async applyColor() {
+                     console.log("Applying color");
+                     this.busy = true;
+                     this.msg = '';
+                     this.err = '';
+
+                     try {
+                         const r = await fetch('/api/led', {
+                             method: 'POST',
+                             headers: {'Content-Type':'application/json'},
+                             body: JSON.stringify({ color: this.color }) // "#RRGGBB"
+                         });
+                         if (!r.ok) throw new Error(await r.text());
+                         const data = await r.json();
+                         this.currentColor = data.color || this.color;
+                         this.msg = 'LED updated';
+                     } catch (e) {
+                         this.err = e.message || 'Failed to update LED';
+                     } finally {
+                         this.busy = false;
+                     }
+                 }
+             }
+         }
+        </script>
+    </body>
+</html>
