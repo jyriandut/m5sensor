@@ -6,8 +6,6 @@
 #include <ArduinoJson.h>
 #include <WebServer.h>
 #include <LittleFS.h>
-#include <cstdint>
-#include <cstdio>
 
 #define NET_CFG "netcfg"
 #define DEFAULT_WIFI_SSID "M5Stack_Atom"
@@ -29,21 +27,12 @@ typedef struct {
 static Rgb currentColor{ 0x00, 0xFF, 0x00 };
 
 namespace storage {
-  bool loadNetCfg(NetCfg& cfg) {
-    Preferences prefs;
-    
-    if (!prefs.begin(NET_CFG, true)) return false;
-
-    cfg.ssid  = prefs.getString("ssid",  DEFAULT_WIFI_SSID);
-    cfg.pass  = prefs.getString("pass",  DEFAULT_WIFI_PASS);
-    cfg.token = prefs.getString("token", "");
-    prefs.end();
-    return true;
-  }
-
   bool saveNetCfg(const NetCfg& cfg) {
     Preferences prefs;
-    if (!prefs.begin(NET_CFG, false)) return false;
+    if (!prefs.begin(NET_CFG, false)) {
+      Serial.printf("ERROR: Failed to open Preferences " NET_CFG);
+      return false;
+    }
 
     prefs.putString("ssid",  cfg.ssid);
     prefs.putString("pass",  cfg.pass);
@@ -51,12 +40,30 @@ namespace storage {
     prefs.end();
     return true;
   }
+
+  bool loadNetCfg(NetCfg& cfg) {
+    Preferences prefs;
+
+    if (!prefs.begin(NET_CFG, false)) {
+      Serial.printf("ERROR: Couldn't load Preferences: " NET_CFG);
+      return false;
+    }
+
+    cfg.ssid = prefs.getString("ssid", DEFAULT_WIFI_SSID);
+    Serial.printf("prefs.getString ssid %s \n", cfg.ssid.c_str());
+    
+    cfg.pass  = prefs.getString("pass",  DEFAULT_WIFI_PASS);
+    cfg.token = prefs.getString("token", "");
+    prefs.end();
+    return true;
+  }
 }
 
 namespace led {
+  
   Rgb hexToRgb(String hex) {
-    
     if (hex.length() != 7 || hex.charAt(0) != '#') return Rgb {};
+
     uint8_t r = strtoul(hex.substring(1,3).c_str(), nullptr, 16);
     uint8_t g = strtoul(hex.substring(3,5).c_str(), nullptr, 16);
     uint8_t b = strtoul(hex.substring(5, 7).c_str(), nullptr, 16);
@@ -105,14 +112,17 @@ namespace api {
     if (err) { server.send(400, "text/plain", "Invalid JSON"); return; }
 
     const char *hex = payload["color"];
-
+    
     if (!hex) {
       server.send(400, "text/plain", "Missing 'color'");
       return;
     }
   
     String h = String(hex);
-    if (h.length() != 7 || h[0] != '#') { server.send(400, "text/plain", "Expect color like \"#RRGGBB\""); return; }
+    if (h.length() != 7 || h[0] != '#') {
+      server.send(400, "text/plain", "Expect color like \"#RRGGBB\"");
+      return;
+    }
 
     led::setLedHex(h);
 
@@ -132,6 +142,18 @@ namespace api {
 
     json::sendJson(doc);
   }
+
+  void handleGetWifi() {
+    JsonDocument doc;
+    NetCfg cfg {};
+
+    storage::loadNetCfg(cfg);
+    doc["ssid"] = cfg.ssid;
+    doc["pass"] = cfg.pass;
+    doc["token"] = cfg.token;
+    
+    json::sendJson(doc);
+  }
   
 }
 
@@ -143,6 +165,7 @@ void initServer() {
 
     server.on("/api/led", HTTP_GET, api::handleGetLed);
     server.on("/api/led", HTTP_POST, api::handlePostLed);
+    server.on("/api/wifi", HTTP_GET, api::handleGetWifi);
 
     // Fallback
     server.onNotFound([]() {
@@ -158,7 +181,7 @@ void initWiFiSoftAP() {
   storage::loadNetCfg(cfg);
   Serial.println("\nWIFI ACCESS POINT (V1)");
   Serial.printf("Connect to: %s\nOpen: http://", cfg.ssid.c_str());
-  
+  Serial.printf("NETCFG: ssid: %s  pass: %s", cfg.ssid.c_str(), cfg.pass.c_str());
   WiFi.softAP(cfg.ssid, cfg.pass);
   IPAddress myIP = WiFi.softAPIP();
 }
@@ -166,13 +189,14 @@ void initWiFiSoftAP() {
 void setup() {
   M5.begin(true, false, true);
   M5.dis.clear();
+  delay(50);
   led::setLedHex("#00FF00");
 
   if (!LittleFS.begin(true)) {
     Serial.println("[ERROR]: Error has occurred with serial filesystem");
     return;
   }
-  delay(50);
+  
   initWiFiSoftAP();
   initServer();
 

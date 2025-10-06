@@ -31,7 +31,7 @@
                         :disabled="busy"
                     >Apply color</button>
                 </div>
-                <p x-show="error" style="color:#b00020" x-text="error"></p>
+                <p x-show="err" style="color:#b00020" x-text="err"></p>
                 <p x-show="ok" style="color:#1b5e20" x-text="ok"></p>
             </article>
             <hr />
@@ -39,26 +39,28 @@
                 <header>
                     <h3> WiFi Settings (stored to flash)</h3>
                 </header>
-                <form>
-                    <fieldset>
+                <form x-init="fetchWifiSettings()" @submit.prevent="saveWifiSettings">
+                    <fieldset :aria-busy="wifiBusy">
                         <label>
                             WiFi SSID:
                             <input
-                                name="ssid"
-                                placeholder="Some ssid"
+                                x-model="wifiSettings.ssid"
+                                type="text"
+                                required
                             />
                         </label>
-                        <label>
-                            WiFi password
-                            <input
-                                type="password"
-                                name="pass"
-                                placeholder=""
-                            />
+                        <label x-data="{ show: false }">
+                            Password:
+                            <input :type="show ? 'text' : 'password'" x-model="wifiSettings.pass" required />
+                            <button type="button" @click="show = !show" aria-label="Toggle password visibility">
+                                <span x-text="show ? 'Hide password' : 'Show password'"></span>
+                            </button>
                         </label>
+                        
                         <label>
                             Authentication token (will be added later):
                             <textarea
+                                x-model="wifiSettings.token"
                                 type="textfield"
                                 name="token"
                                 placeholder=""
@@ -66,7 +68,8 @@
                         </label>
                     </fieldset>
 
-                    <input
+                    <input                        
+                        :disabled="wifiBusy"
                         type="submit"
                         value="Save"
                     />
@@ -78,11 +81,17 @@
          function ledApp() {
              return {
                  busy: false,
+                 wifiBusy: false,
                  color: '#00ff00',
                  currentColor: '#000000',
                  msg: '',
                  err: '',
                  ok: '',
+                 wifiSettings: {
+                     ssid: 'abc',
+                     pass: 'asdad',
+                     token: 'akdk',
+                 },
 
                  async init() {
                      try {
@@ -91,10 +100,51 @@
                              const data = await r.json();
                              this.currentColor = data.color || this.currentColor;
                              this.color = data.color || this.color;
-                         }
+                         }                         
+                         
                      } catch (_) { /* ignore on first load */ }
                  },
+                 async fetchWifiSettings() {
+                     try {
+                         const wifi = await fetch('/api/wifi');
+                         if (wifi.ok) {
+                             const data = await wifi.json();
+                             this.wifiSettings = {
+                                 ssid: data.ssid,
+                                 pass: data.pass,
+                                 token: data.token
+                             };
+                             console.log("WIFI Settings ", this.wifiSettings);
+                         }
+                     } catch (_) {
+                     }
+                     
+                 },
+                 async saveWifiSettings() {
+                     this.wifiBusy = true;
+                     //this.wifiMsg = '';
+                     //this.wifiErr = '';
 
+                     try {
+                         const r = await fetch('/api/wifi', {
+                             method: 'POST',
+                             headers: {'Content-Type':'application/json'},
+                             body: JSON.stringify({
+                                 ssid: this.wifiSettings.ssid,
+                                 pass: this.wifiSettings.pass,
+                                 token: this.wifiSettings.token
+                             }),
+                         });
+                         if (!r.ok) throw new Error(await r.text());
+                         //this.wifiMsg = 'Wifi Settings Upddated';
+                     } catch (e) {
+                         console.log("ERROR saving wifi")
+                         //this.wifiErr = e.message || 'Failed to wifi settings';
+                     } finally {
+                         this.wifiBusy = false;
+                         //this.wifiErr = false;
+                     }
+                 },
                  async applyColor() {
                      console.log("Applying color");
                      this.busy = true;
