@@ -1,0 +1,13 @@
+CompileFlags:
+  # Remove GCC/ESP32 flags Clang can't parse:
+  Remove: [-fno-tree-switch-conversion, -fstrict-volatile-bitfields, -mlongcalls]
+
+Clangd:
+  # Let clangd query your Xtensa GCC to discover system includes.
+  # Adjust the path to your user:
+  Arguments: [--query-driver=/Users/jyria/.platformio/packages/toolchain-xtensa-esp32/bin/xtensa-esp32-elf-*]
+
+Diagnostics:
+  # Work around Mach-O target complaining about ESP32 section attributes.
+  # (We can't suppress driver errors, but we can hide this semantic one.)
+  Suppress: [attribute_section_invalid_for_target]

@@ -2,14 +2,18 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WiFiAP.h>
+#include <ESPmDNS.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <WebServer.h>
 #include <LittleFS.h>
+#include <cstdint>
+#include "LedBlinker.h"
 
 #define NET_CFG "netcfg"
 #define DEFAULT_WIFI_SSID "M5Stack_Atom"
 #define DEFAULT_WIFI_PASS "66666666"
+#define DEFAULT_LED_COLOR "#00FF00"
 
 WebServer server(80);
 Preferences prefs;
@@ -82,7 +86,7 @@ namespace led {
     M5.dis.drawpix(0, CRGB(rgb.r, rgb.g, rgb.b));
     currentColor = rgb;
   }
-  
+
 }
 
 namespace json {
@@ -154,12 +158,67 @@ namespace api {
     
     json::sendJson(doc);
   }
+
+} // namespace api
+
+namespace network {
+  bool connectWiFiSTA(const char* ssid, const char* pass, uint32_t timeoutMs = 10000) {
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(ssid, pass);
+    Serial.printf("Connecting to WiFi SSID: %s\n", ssid);
+
+    uint32_t start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
+      delay(200);
+      Serial.print(".");
+    }
+    Serial.println();
+
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.printf("STA connected. IP: %s\n", WiFi.localIP().toString().c_str());
+      return true;
+    }
+    Serial.println("STA connect failed, will start SoftAP.");
+    return false;
+  }
+
+  void initWiFi() {
+    NetCfg cfg{};
+    storage::loadNetCfg(cfg);
+
+    if (!connectWiFiSTA(cfg.ssid.c_str(), cfg.pass.c_str())) {
+      // Fallback to AP using the same (or default) creds
+      WiFi.mode(WIFI_AP);
+      bool ok = WiFi.softAP(cfg.ssid.c_str(), cfg.pass.c_str());
+      Serial.println("\nWIFI ACCESS POINT (fallback)");
+      Serial.printf("SSID: %s  PASS: %s\n", cfg.ssid.c_str(), cfg.pass.c_str());
+      Serial.printf("AP IP: %s\n", WiFi.softAPIP().toString().c_str());
+    } else {
+      // mDNS so you can use http://m5.local
+      if (MDNS.begin("m5")) {
+        MDNS.addService("http", "tcp", 80);
+        Serial.println("mDNS responder started as m5.local");
+      } else {
+        Serial.println("mDNS start failed");
+      }
+    }
+  }
+
+  void initWiFiSoftAP() {
+    NetCfg cfg {};
+    storage::loadNetCfg(cfg);
+    Serial.println("\nWIFI ACCESS POINT (V1)");
+    Serial.printf("Connect to: %s\nOpen: http://", cfg.ssid.c_str());
+    Serial.printf("NETCFG: ssid: %s  pass: %s", cfg.ssid.c_str(), cfg.pass.c_str());
+    WiFi.softAP(cfg.ssid, cfg.pass);
+    IPAddress myIP = WiFi.softAPIP();
+  }
   
 }
 
 void initServer() {
     server.serveStatic("/", LittleFS, "/index.html");
-    server.serveStatic("/index.js", LittleFS, "/index.js");
+    server.serveStatic("/app.js", LittleFS, "/app.js");
     server.serveStatic("/pico.lime.min.css", LittleFS, "/pico.lime.min.css");
     server.serveStatic("/alpine.min.js", LittleFS, "/alpine.min.js");
 
@@ -173,37 +232,40 @@ void initServer() {
     });
   
     server.begin();
-  }
-
-
-void initWiFiSoftAP() {
-  NetCfg cfg {};
-  storage::loadNetCfg(cfg);
-  Serial.println("\nWIFI ACCESS POINT (V1)");
-  Serial.printf("Connect to: %s\nOpen: http://", cfg.ssid.c_str());
-  Serial.printf("NETCFG: ssid: %s  pass: %s", cfg.ssid.c_str(), cfg.pass.c_str());
-  WiFi.softAP(cfg.ssid, cfg.pass);
-  IPAddress myIP = WiFi.softAPIP();
 }
+
+void setPixel(uint32_t rgb) {
+  M5.dis.drawpix(0, rgb);
+}
+
+LedBlinker ledBlinker(setPixel);
+
 
 void setup() {
   M5.begin(true, false, true);
   M5.dis.clear();
-  delay(50);
-  led::setLedHex("#00FF00");
+  //delay(50);
+  //led::setLedHex(DEFAULT_LED_COLOR);
+  ledBlinker.setSolid(RGB24(100, 100, 100));
+  
 
   if (!LittleFS.begin(true)) {
     Serial.println("[ERROR]: Error has occurred with serial filesystem");
     return;
   }
   
-  initWiFiSoftAP();
+  network::initWiFiSoftAP();
   initServer();
 
   Serial.println("[INFO]: M5 App Setup Done");
+
+  delay(1000);
+  //ledBlinker.setBlink(RGB24(0, 255, 0), 0x000000, 1000, 0.5f);
+  
 }
 
 void loop() {
+  M5.update();
   server.handleClient();
-  delay(2);
+  //ledBlinker.tick();
 }

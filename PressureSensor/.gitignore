@@ -1,2 +1,4 @@
 .pio
 .cache
+.ccls-cache/
+.vs-code/
