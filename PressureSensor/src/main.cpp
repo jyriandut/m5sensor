@@ -8,7 +8,9 @@
 #include <WebServer.h>
 #include <LittleFS.h>
 #include <cstdint>
-#include "LedBlinker.h"
+//#include "LedBlinker.h"
+#include "crgb.h"
+#include "led_blinker.h"
 
 #define NET_CFG "netcfg"
 #define DEFAULT_WIFI_SSID "M5Stack_Atom"
@@ -24,11 +26,7 @@ typedef struct {
   String token; // optional auth token for future use
 } NetCfg;
 
-typedef struct {
-  uint8_t r, g, b;
-} Rgb;
-
-static Rgb currentColor{ 0x00, 0xFF, 0x00 };
+LedBlinker ledBlinker;
 
 namespace storage {
   bool saveNetCfg(const NetCfg& cfg) {
@@ -65,27 +63,22 @@ namespace storage {
 
 namespace led {
   
-  Rgb hexToRgb(String hex) {
-    if (hex.length() != 7 || hex.charAt(0) != '#') return Rgb {};
+  LedRGB hexToRgb(String hex) {
+    if (hex.length() != 7 || hex.charAt(0) != '#') return LedRGB {0, 0, 0};
 
     uint8_t r = strtoul(hex.substring(1,3).c_str(), nullptr, 16);
     uint8_t g = strtoul(hex.substring(3,5).c_str(), nullptr, 16);
     uint8_t b = strtoul(hex.substring(5, 7).c_str(), nullptr, 16);
     
-    return Rgb {r, g, b};
+    return LedRGB {r, g, b};
   }
 
-  String rgbToHex(Rgb rgb) {
+  String rgbToHex(LedRGB rgb) {
     char hexColor[8];
     snprintf(hexColor, sizeof(hexColor), "#%02X%02X%02X", rgb.r, rgb.g, rgb.b);
     return String(hexColor);
   }
-  
-  void setLedHex(const String& hex) {
-    Rgb rgb = hexToRgb(hex);
-    M5.dis.drawpix(0, CRGB(rgb.r, rgb.g, rgb.b));
-    currentColor = rgb;
-  }
+ 
 
 }
 
@@ -128,11 +121,10 @@ namespace api {
       return;
     }
 
-    led::setLedHex(h);
-
+    LedRGB rgb = led::hexToRgb(hex);
+    ledBlinker.set_solid(rgb);
     JsonDocument out;
-
-    out["color"] = led::rgbToHex(currentColor);
+    out["color"] = led::rgbToHex(ledBlinker.colorSolid);
   
     String s;
     serializeJson(out, s);
@@ -142,7 +134,7 @@ namespace api {
   void handleGetLed() {
     JsonDocument doc;
 
-    doc["color"] = led::rgbToHex(currentColor);
+    doc["color"] = led::rgbToHex(ledBlinker.colorSolid);
 
     json::sendJson(doc);
   }
@@ -162,46 +154,47 @@ namespace api {
 } // namespace api
 
 namespace network {
-  bool connectWiFiSTA(const char* ssid, const char* pass, uint32_t timeoutMs = 10000) {
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(ssid, pass);
-    Serial.printf("Connecting to WiFi SSID: %s\n", ssid);
+  // bool connectWiFiSTA(const char* ssid, const char* pass, uint32_t timeoutMs = 10000) {
+  //   WiFi.mode(WIFI_STA);
+  //   WiFi.begin(ssid, pass);
+  //   Serial.printf("Connecting to WiFi SSID: %s\n", ssid);
 
-    uint32_t start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
-      delay(200);
-      Serial.print(".");
-    }
-    Serial.println();
+  //   uint32_t start = millis();
+  //   while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
+  //     delay(200);
+  //     Serial.print(".");
+  //   }
+  //   Serial.println();
 
-    if (WiFi.status() == WL_CONNECTED) {
-      Serial.printf("STA connected. IP: %s\n", WiFi.localIP().toString().c_str());
-      return true;
-    }
-    Serial.println("STA connect failed, will start SoftAP.");
-    return false;
-  }
+  //   if (WiFi.status() == WL_CONNECTED) {
+  //     Serial.printf("STA connected. IP: %s\n", WiFi.localIP().toString().c_str());
+  //     return true;
+  //   }
+  //   Serial.println("STA connect failed, will start SoftAP.");
+  //   return false;
+  // }
 
   void initWiFi() {
     NetCfg cfg{};
     storage::loadNetCfg(cfg);
 
-    if (!connectWiFiSTA(cfg.ssid.c_str(), cfg.pass.c_str())) {
-      // Fallback to AP using the same (or default) creds
-      WiFi.mode(WIFI_AP);
-      bool ok = WiFi.softAP(cfg.ssid.c_str(), cfg.pass.c_str());
-      Serial.println("\nWIFI ACCESS POINT (fallback)");
-      Serial.printf("SSID: %s  PASS: %s\n", cfg.ssid.c_str(), cfg.pass.c_str());
-      Serial.printf("AP IP: %s\n", WiFi.softAPIP().toString().c_str());
-    } else {
-      // mDNS so you can use http://m5.local
-      if (MDNS.begin("m5")) {
-        MDNS.addService("http", "tcp", 80);
-        Serial.println("mDNS responder started as m5.local");
-      } else {
-        Serial.println("mDNS start failed");
-      }
-    }
+    WiFi.mode(WIFI_AP);
+    bool ok = WiFi.softAP(cfg.ssid.c_str(), cfg.pass.c_str());
+    Serial.println("\nWIFI ACCESS POINT (fallback)");
+    Serial.printf("SSID: %s  PASS: %s\n", cfg.ssid.c_str(), cfg.pass.c_str());
+    Serial.printf("AP IP: %s\n", WiFi.softAPIP().toString().c_str());
+    // if (!connectWiFiSTA(cfg.ssid.c_str(), cfg.pass.c_str())) {
+    //   // Fallback to AP using the same (or default) creds
+      
+    // } else {
+    //   // mDNS so you can use http://m5.local
+    //   if (MDNS.begin("m5")) {
+    //     MDNS.addService("http", "tcp", 80);
+    //     Serial.println("mDNS responder started as m5.local");
+    //   } else {
+    //     Serial.println("mDNS start failed");
+    //   }
+    // }
   }
 
   void initWiFiSoftAP() {
@@ -234,21 +227,19 @@ void initServer() {
     server.begin();
 }
 
-void setPixel(uint32_t rgb) {
-  M5.dis.drawpix(0, rgb);
+void setPixel(LedRGB rgb) {
+  M5.dis.drawpix(0, CRGB(rgb.r, rgb.g, rgb.b));
 }
-
-LedBlinker ledBlinker(setPixel);
 
 
 void setup() {
   M5.begin(true, false, true);
   M5.dis.clear();
-  //delay(50);
-  //led::setLedHex(DEFAULT_LED_COLOR);
-  ledBlinker.setSolid(RGB24(100, 100, 100));
-  
+  ledBlinker.init(setPixel);
 
+  // ledBlinker.set_solid({0, 100, 0});
+  ledBlinker.set_blink({0, 100, 0}, {100, 0, 0});
+  
   if (!LittleFS.begin(true)) {
     Serial.println("[ERROR]: Error has occurred with serial filesystem");
     return;
@@ -258,14 +249,11 @@ void setup() {
   initServer();
 
   Serial.println("[INFO]: M5 App Setup Done");
-
-  delay(1000);
-  //ledBlinker.setBlink(RGB24(0, 255, 0), 0x000000, 1000, 0.5f);
   
 }
 
 void loop() {
   M5.update();
   server.handleClient();
-  //ledBlinker.tick();
+  ledBlinker.tick();
 }
