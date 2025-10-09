@@ -7,9 +7,12 @@
 #include <ArduinoJson.h>
 #include <WebServer.h>
 #include <LittleFS.h>
+#include <cstddef>
 #include <cstdint>
+#include <vector>
 //#include "LedBlinker.h"
 #include "crgb.h"
+#include "esp_wifi_types.h"
 #include "led_blinker.h"
 
 #define NET_CFG "netcfg"
@@ -91,6 +94,91 @@ namespace json {
   }
 }
 
+namespace network {
+  // bool connectWiFiSTA(const char* ssid, const char* pass, uint32_t timeoutMs = 10000) {
+  //   WiFi.mode(WIFI_STA);
+  //   WiFi.begin(ssid, pass);
+  //   Serial.printf("Connecting to WiFi SSID: %s\n", ssid);
+
+  //   uint32_t start = millis();
+  //   while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
+  //     delay(200);
+  //     Serial.print(".");
+  //   }
+  //   Serial.println();
+
+  //   if (WiFi.status() == WL_CONNECTED) {
+  //     Serial.printf("STA connected. IP: %s\n", WiFi.localIP().toString().c_str());
+  //     return true;
+  //   }
+  //   Serial.println("STA connect failed, will start SoftAP.");
+  //   return false;
+  // }
+
+  typedef struct {
+    String ssid;
+    int32_t rssi;
+    wifi_auth_mode_t auth_mode;
+  } NetworkData;
+
+  void scanWiFiNetworks(std::vector<network::NetworkData> &networks) {
+    Serial.println("Scanning WiFi networks");
+    int n = WiFi.scanNetworks();
+    Serial.println("Scan done");
+
+    if (n == 0) {
+      Serial.println("No networks found");
+    } else {
+      Serial.print(n);
+      Serial.println(" networks found");
+      for (int i = 0; i < n; ++i) {
+
+        const NetworkData n = {
+          WiFi.SSID(i),
+          WiFi.RSSI(i),
+          WiFi.encryptionType(i)
+        };
+        
+        networks.push_back(n);
+      }
+    }
+  }
+
+  void initWiFi() {
+    NetCfg cfg{};
+    storage::loadNetCfg(cfg);
+
+    WiFi.mode(WIFI_MODE_APSTA);
+    bool ok = WiFi.softAP(cfg.ssid.c_str(), cfg.pass.c_str());
+    Serial.println("\nWIFI ACCESS POINT (fallback)");
+    Serial.printf("SSID: %s  PASS: %s\n", cfg.ssid.c_str(), cfg.pass.c_str());
+    Serial.printf("AP IP: %s\n", WiFi.softAPIP().toString().c_str());
+    // if (!connectWiFiSTA(cfg.ssid.c_str(), cfg.pass.c_str())) {
+    //   // Fallback to AP using the same (or default) creds
+      
+    // } else {
+    //   // mDNS so you can use http://m5.local
+    //   if (MDNS.begin("m5")) {
+    //     MDNS.addService("http", "tcp", 80);
+    //     Serial.println("mDNS responder started as m5.local");
+    //   } else {
+    //     Serial.println("mDNS start failed");
+    //   }
+    // }
+  }
+
+  void initWiFiSoftAP() {
+    NetCfg cfg {};
+    storage::loadNetCfg(cfg);
+    Serial.println("\nWIFI ACCESS POINT (V1)");
+    Serial.printf("Connect to: %s\nOpen: http://", cfg.ssid.c_str());
+    Serial.printf("NETCFG: ssid: %s  pass: %s", cfg.ssid.c_str(), cfg.pass.c_str());
+    WiFi.softAP(cfg.ssid, cfg.pass);
+    IPAddress myIP = WiFi.softAPIP();
+  }
+  
+}
+
 namespace api {
   void handlePostLed() {
     if (server.method() != HTTP_POST) {
@@ -140,9 +228,22 @@ namespace api {
   }
 
   void handleGetWifi() {
-    JsonDocument doc;
+    
     NetCfg cfg {};
+    std::vector<network::NetworkData> networks;
+    network::scanWiFiNetworks(networks);
 
+    JsonDocument doc;
+    JsonObject obj = doc.to<JsonObject>();
+    JsonArray arr = obj["networks"].to<JsonArray>();
+    
+    Serial.printf("Found %d networks.\n", networks.size());
+    for (auto n : networks) {
+      JsonObject x = arr.add<JsonObject>();
+      x["ssid"] = n.ssid;
+      x["rssi"] = n.rssi;
+    }
+    
     storage::loadNetCfg(cfg);
     doc["ssid"] = cfg.ssid;
     doc["pass"] = cfg.pass;
@@ -150,64 +251,8 @@ namespace api {
     
     json::sendJson(doc);
   }
+} 
 
-} // namespace api
-
-namespace network {
-  // bool connectWiFiSTA(const char* ssid, const char* pass, uint32_t timeoutMs = 10000) {
-  //   WiFi.mode(WIFI_STA);
-  //   WiFi.begin(ssid, pass);
-  //   Serial.printf("Connecting to WiFi SSID: %s\n", ssid);
-
-  //   uint32_t start = millis();
-  //   while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
-  //     delay(200);
-  //     Serial.print(".");
-  //   }
-  //   Serial.println();
-
-  //   if (WiFi.status() == WL_CONNECTED) {
-  //     Serial.printf("STA connected. IP: %s\n", WiFi.localIP().toString().c_str());
-  //     return true;
-  //   }
-  //   Serial.println("STA connect failed, will start SoftAP.");
-  //   return false;
-  // }
-
-  void initWiFi() {
-    NetCfg cfg{};
-    storage::loadNetCfg(cfg);
-
-    WiFi.mode(WIFI_AP);
-    bool ok = WiFi.softAP(cfg.ssid.c_str(), cfg.pass.c_str());
-    Serial.println("\nWIFI ACCESS POINT (fallback)");
-    Serial.printf("SSID: %s  PASS: %s\n", cfg.ssid.c_str(), cfg.pass.c_str());
-    Serial.printf("AP IP: %s\n", WiFi.softAPIP().toString().c_str());
-    // if (!connectWiFiSTA(cfg.ssid.c_str(), cfg.pass.c_str())) {
-    //   // Fallback to AP using the same (or default) creds
-      
-    // } else {
-    //   // mDNS so you can use http://m5.local
-    //   if (MDNS.begin("m5")) {
-    //     MDNS.addService("http", "tcp", 80);
-    //     Serial.println("mDNS responder started as m5.local");
-    //   } else {
-    //     Serial.println("mDNS start failed");
-    //   }
-    // }
-  }
-
-  void initWiFiSoftAP() {
-    NetCfg cfg {};
-    storage::loadNetCfg(cfg);
-    Serial.println("\nWIFI ACCESS POINT (V1)");
-    Serial.printf("Connect to: %s\nOpen: http://", cfg.ssid.c_str());
-    Serial.printf("NETCFG: ssid: %s  pass: %s", cfg.ssid.c_str(), cfg.pass.c_str());
-    WiFi.softAP(cfg.ssid, cfg.pass);
-    IPAddress myIP = WiFi.softAPIP();
-  }
-  
-}
 
 void initServer() {
     server.serveStatic("/", LittleFS, "/index.html");
@@ -249,7 +294,6 @@ void setup() {
   initServer();
 
   Serial.println("[INFO]: M5 App Setup Done");
-  
 }
 
 void loop() {
