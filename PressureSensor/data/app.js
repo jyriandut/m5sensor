@@ -44,6 +44,8 @@ document.addEventListener('alpine:init', () => {
 
     Alpine.data('wifiSettings', () => ({
         wifiBusy: false,
+        networks: [],
+        selectedNetwork: {},
         credentials : {
             ssid: '',
             pass: '',
@@ -61,7 +63,8 @@ document.addEventListener('alpine:init', () => {
                         ssid: data.ssid,
                         pass: data.pass,
                         token: data.token
-                    }
+                    };
+                    this.networks = data.networks;
                 }
             } catch (_) {
             } finally {

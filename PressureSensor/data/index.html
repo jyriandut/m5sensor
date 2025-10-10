@@ -33,12 +33,20 @@
         <p x-show="ok" style="color:#1b5e20" x-text="ok"></p>
       </article>
       <hr />
-      <article x-data="wifiSettings" x-cloak>
+      <article x-data="wifiSettings">
         <header>
           <h3> WiFi Settings (stored to flash)</h3>
         </header>
-        <form @submit.prevent="saveWifiSettings">
-          <fieldset :aria-busy="wifiBusy">
+        <form @submit.prevent="saveWifiSettings" :aria-busy="wifiBusy">
+          <fieldset>
+            <label>
+              Available WiFi networks:
+              <select aria-label="Select your network" x-model="selectedNetwork">
+                <template x-for="network in networks" :key="network">
+                  <option :value="network.ssid" x-text="network.ssid"></option>
+                </template>
+              </select>
+            </label>
             <label>
               WiFi SSID:
               <input

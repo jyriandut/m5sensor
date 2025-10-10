@@ -2,15 +2,12 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WiFiAP.h>
-#include <ESPmDNS.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <WebServer.h>
 #include <LittleFS.h>
-#include <cstddef>
 #include <cstdint>
 #include <vector>
-//#include "LedBlinker.h"
 #include "crgb.h"
 #include "esp_wifi_types.h"
 #include "led_blinker.h"
@@ -81,8 +78,6 @@ namespace led {
     snprintf(hexColor, sizeof(hexColor), "#%02X%02X%02X", rgb.r, rgb.g, rgb.b);
     return String(hexColor);
   }
- 
-
 }
 
 namespace json {
@@ -95,26 +90,6 @@ namespace json {
 }
 
 namespace network {
-  // bool connectWiFiSTA(const char* ssid, const char* pass, uint32_t timeoutMs = 10000) {
-  //   WiFi.mode(WIFI_STA);
-  //   WiFi.begin(ssid, pass);
-  //   Serial.printf("Connecting to WiFi SSID: %s\n", ssid);
-
-  //   uint32_t start = millis();
-  //   while (WiFi.status() != WL_CONNECTED && millis() - start < timeoutMs) {
-  //     delay(200);
-  //     Serial.print(".");
-  //   }
-  //   Serial.println();
-
-  //   if (WiFi.status() == WL_CONNECTED) {
-  //     Serial.printf("STA connected. IP: %s\n", WiFi.localIP().toString().c_str());
-  //     return true;
-  //   }
-  //   Serial.println("STA connect failed, will start SoftAP.");
-  //   return false;
-  // }
-
   typedef struct {
     String ssid;
     int32_t rssi;
@@ -153,18 +128,6 @@ namespace network {
     Serial.println("\nWIFI ACCESS POINT (fallback)");
     Serial.printf("SSID: %s  PASS: %s\n", cfg.ssid.c_str(), cfg.pass.c_str());
     Serial.printf("AP IP: %s\n", WiFi.softAPIP().toString().c_str());
-    // if (!connectWiFiSTA(cfg.ssid.c_str(), cfg.pass.c_str())) {
-    //   // Fallback to AP using the same (or default) creds
-      
-    // } else {
-    //   // mDNS so you can use http://m5.local
-    //   if (MDNS.begin("m5")) {
-    //     MDNS.addService("http", "tcp", 80);
-    //     Serial.println("mDNS responder started as m5.local");
-    //   } else {
-    //     Serial.println("mDNS start failed");
-    //   }
-    // }
   }
 
   void initWiFiSoftAP() {
@@ -264,7 +227,6 @@ void initServer() {
     server.on("/api/led", HTTP_POST, api::handlePostLed);
     server.on("/api/wifi", HTTP_GET, api::handleGetWifi);
 
-    // Fallback
     server.onNotFound([]() {
       server.send(404, "text/plain", "Not Found");
     });
@@ -282,7 +244,6 @@ void setup() {
   M5.dis.clear();
   ledBlinker.init(setPixel);
 
-  // ledBlinker.set_solid({0, 100, 0});
   ledBlinker.set_blink({0, 100, 0}, {100, 0, 0});
   
   if (!LittleFS.begin(true)) {
