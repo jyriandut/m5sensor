@@ -6,15 +6,18 @@
 #include <ArduinoJson.h>
 #include <WebServer.h>
 #include <LittleFS.h>
+#include <chrono>
 #include <cstdint>
+#include <sys/types.h>
 #include <vector>
 #include "crgb.h"
+#include "esp32-hal.h"
 #include "esp_wifi_types.h"
 #include "led_blinker.h"
 
 #define NET_CFG "netcfg"
-#define DEFAULT_WIFI_SSID "M5Stack_Atom"
-#define DEFAULT_WIFI_PASS "66666666"
+#define AP_WIFI_SSID "M5Stack_Atom"
+#define AP_WIFI_PASS "66666666"
 #define DEFAULT_LED_COLOR "#00FF00"
 
 WebServer server(80);
@@ -26,7 +29,32 @@ typedef struct {
   String token; // optional auth token for future use
 } NetCfg;
 
+// first startup:
+// enable AP_STA mode for wifi
+// wait for connection
+// connection received
+// scanning networks
+
+enum State {
+  NOOP,
+  START_SETUP,
+  PROVISIONING_MODE,
+  OPERATION_MODE,
+  PM_CONNECT_WAIT,
+  OP_CONNECT_WAIT
+};
+
+static State state = NOOP;
+
+static void change_state(State next) {
+  if (next == state) return;
+  state = next;
+  Serial.printf("→ State changed to %d\n", state);
+}
+
 LedBlinker ledBlinker;
+
+NetCfg netCfg {}; 
 
 namespace storage {
   bool saveNetCfg(const NetCfg& cfg) {
@@ -43,6 +71,34 @@ namespace storage {
     return true;
   }
 
+  bool clearCredentials() {
+    Serial.printf("Deleting preferences: " NET_CFG);
+    Preferences prefs;
+    if (!prefs.begin(NET_CFG, true)) {
+      Serial.printf("ERROR: Couldn't load Preferences: " NET_CFG);
+      return false;
+    }
+    return prefs.clear();
+  }
+  
+  bool hasCredentials() {
+    Preferences prefs;
+
+    if (!prefs.begin(NET_CFG, true)) {
+      Serial.printf("ERROR: Couldn't load Preferences: " NET_CFG);
+      return false;
+    }
+    if (!prefs.getString("ssid")) {
+      
+      return false;
+    }
+
+    if (!prefs.getString("pass"))
+      return false;
+
+    return true;
+  }
+  
   bool loadNetCfg(NetCfg& cfg) {
     Preferences prefs;
 
@@ -51,10 +107,10 @@ namespace storage {
       return false;
     }
 
-    cfg.ssid = prefs.getString("ssid", DEFAULT_WIFI_SSID);
+    cfg.ssid = prefs.getString("ssid", "");
     Serial.printf("prefs.getString ssid %s \n", cfg.ssid.c_str());
     
-    cfg.pass  = prefs.getString("pass",  DEFAULT_WIFI_PASS);
+    cfg.pass  = prefs.getString("pass", "");
     cfg.token = prefs.getString("token", "");
     prefs.end();
     return true;
@@ -119,27 +175,13 @@ namespace network {
     }
   }
 
-  void initWiFi() {
-    NetCfg cfg{};
-    storage::loadNetCfg(cfg);
-
+  void initAPWiFi() {
     WiFi.mode(WIFI_MODE_APSTA);
-    bool ok = WiFi.softAP(cfg.ssid.c_str(), cfg.pass.c_str());
+    bool ok = WiFi.softAP(AP_WIFI_SSID, AP_WIFI_PASS);
     Serial.println("\nWIFI ACCESS POINT (fallback)");
-    Serial.printf("SSID: %s  PASS: %s\n", cfg.ssid.c_str(), cfg.pass.c_str());
+    Serial.printf("SSID: %s  PASS: %s\n", AP_WIFI_SSID, AP_WIFI_SSID);
     Serial.printf("AP IP: %s\n", WiFi.softAPIP().toString().c_str());
   }
-
-  void initWiFiSoftAP() {
-    NetCfg cfg {};
-    storage::loadNetCfg(cfg);
-    Serial.println("\nWIFI ACCESS POINT (V1)");
-    Serial.printf("Connect to: %s\nOpen: http://", cfg.ssid.c_str());
-    Serial.printf("NETCFG: ssid: %s  pass: %s", cfg.ssid.c_str(), cfg.pass.c_str());
-    WiFi.softAP(cfg.ssid, cfg.pass);
-    IPAddress myIP = WiFi.softAPIP();
-  }
-  
 }
 
 namespace api {
@@ -191,11 +233,8 @@ namespace api {
   }
 
   void handleGetWifi() {
-    
-    NetCfg cfg {};
     std::vector<network::NetworkData> networks;
     network::scanWiFiNetworks(networks);
-
     JsonDocument doc;
     JsonObject obj = doc.to<JsonObject>();
     JsonArray arr = obj["networks"].to<JsonArray>();
@@ -207,17 +246,17 @@ namespace api {
       x["rssi"] = n.rssi;
     }
     
-    storage::loadNetCfg(cfg);
-    doc["ssid"] = cfg.ssid;
-    doc["pass"] = cfg.pass;
-    doc["token"] = cfg.token;
+    storage::loadNetCfg(netCfg);
+    doc["ssid"] = netCfg.ssid;
+    doc["pass"] = netCfg.pass;
+    doc["token"] = netCfg.token;
     
     json::sendJson(doc);
   }
-} 
+}
 
-
-void initServer() {
+namespace http_server {
+  void initAPServer() {
     server.serveStatic("/", LittleFS, "/index.html");
     server.serveStatic("/app.js", LittleFS, "/app.js");
     server.serveStatic("/pico.lime.min.css", LittleFS, "/pico.lime.min.css");
@@ -232,7 +271,11 @@ void initServer() {
     });
   
     server.begin();
+  }
+  
 }
+
+
 
 void setPixel(LedRGB rgb) {
   M5.dis.drawpix(0, CRGB(rgb.r, rgb.g, rgb.b));
@@ -240,25 +283,76 @@ void setPixel(LedRGB rgb) {
 
 
 void setup() {
+  change_state(START_SETUP);
   M5.begin(true, false, true);
   M5.dis.clear();
   ledBlinker.init(setPixel);
 
-  ledBlinker.set_blink({0, 100, 0}, {100, 0, 0});
+  ledBlinker.set_blink({255, 165, 0}, {0, 0, 0});
   
   if (!LittleFS.begin(true)) {
     Serial.println("[ERROR]: Error has occurred with serial filesystem");
     return;
   }
-  
-  network::initWiFiSoftAP();
-  initServer();
 
+  if (!storage::hasCredentials()) {
+    Serial.println("No credentials, entering provisioning mode");
+    change_state(State::PROVISIONING_MODE);
+  } else {
+    Serial.println("Found credentials, entering operations mode");
+    change_state(State::OPERATION_MODE);
+  }
+
+  switch (state) {
+  case State::PROVISIONING_MODE:
+    network::initAPWiFi();
+    http_server::initAPServer();
+    delay(100);
+    change_state(State::PM_CONNECT_WAIT);
+    break;
+  case State::OPERATION_MODE:
+    storage::loadNetCfg(netCfg);
+    // Connect to wifi
+
+    change_state(State::PM_CONNECT_WAIT);
+    break;
+  }
   Serial.println("[INFO]: M5 App Setup Done");
+  
+
 }
 
+u_long lastTime = millis();
+
+
 void loop() {
+  u_long now = millis();
+  u_long dt = now - lastTime;
+  if (dt > 1000) {
+      lastTime = now;
+  }
+
   M5.update();
   server.handleClient();
   ledBlinker.tick();
+  
+  switch (state) {
+  case PM_CONNECT_WAIT:
+    if (dt > 1000) {
+      Serial.println("One tick every 1 second");
+    }
+    break;
+  case OP_CONNECT_WAIT:
+    if (dt > 1000) {
+      Serial.println("Should get here yet.");
+    }
+    break;
+  default:
+    if (dt > 1000) {
+      Serial.println("DEFAUL loop.");
+    }
+    
+    break;
+  }
+  
 }
