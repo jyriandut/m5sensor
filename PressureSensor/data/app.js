@@ -78,15 +78,15 @@ document.addEventListener('alpine:init', () => {
                     method: 'POST',
                     headers: {'Content-Type':'application/json'},
                     body: JSON.stringify({
-                        ssid: this.wifiSettings.ssid,
-                        pass: this.wifiSettings.pass,
-                        token: this.wifiSettings.token
+                        ssid: this.credentials.ssid,
+                        pass: this.credentials.pass,
+                        token: this.credentials.token
                     }),
                 });
                 if (!r.ok) throw new Error(await r.text());
                 //this.wifiMsg = 'Wifi Settings Upddated';
             } catch (e) {
-                console.log("ERROR saving wifi")
+                console.error("ERROR saving wifi ", e);
                 //this.wifiErr = e.message || 'Failed to wifi settings';
             } finally {
                 this.wifiBusy = false;

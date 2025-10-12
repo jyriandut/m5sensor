@@ -6,10 +6,10 @@
 #include <ArduinoJson.h>
 #include <WebServer.h>
 #include <LittleFS.h>
-#include <chrono>
 #include <cstdint>
 #include <sys/types.h>
 #include <vector>
+#include "WiFiType.h"
 #include "crgb.h"
 #include "esp32-hal.h"
 #include "esp_wifi_types.h"
@@ -19,6 +19,11 @@
 #define AP_WIFI_SSID "M5Stack_Atom"
 #define AP_WIFI_PASS "66666666"
 #define DEFAULT_LED_COLOR "#00FF00"
+
+#define COLOR_GREEN {0, 200, 0}
+#define COLOR_BLUE {0, 0, 200}
+#define COLOR_ORANGE {120, 255, 0}
+#define COLOR_BLACK {0,0,0}
 
 WebServer server(80);
 Preferences prefs;
@@ -83,20 +88,21 @@ namespace storage {
   
   bool hasCredentials() {
     Preferences prefs;
-
+    bool result = true;
     if (!prefs.begin(NET_CFG, true)) {
       Serial.printf("ERROR: Couldn't load Preferences: " NET_CFG);
-      return false;
+      result = false;
     }
-    if (!prefs.getString("ssid")) {
-      
-      return false;
+    if (!prefs.isKey("ssid")) {
+      Serial.println("ssid key not found in preferences");
+      result = false;
     }
-
-    if (!prefs.getString("pass"))
-      return false;
-
-    return true;
+    else if (prefs.getString("ssid").equals(String())) {
+      Serial.println("ssid key value empty");
+      result = false;
+    }
+    prefs.end();
+    return result;
   }
   
   bool loadNetCfg(NetCfg& cfg) {
@@ -253,6 +259,54 @@ namespace api {
     
     json::sendJson(doc);
   }
+
+  void handlePostWifi() {
+    Serial.printf("Saving WIFI credentials \n");
+    if (server.method() != HTTP_POST) {
+      server.send(405, "text/plain", "Method Not Allowed");
+      return;
+    }
+
+    if (!server.hasArg("plain")) {
+      server.send(400, "text/plain", "Missing body");
+      return;
+    }
+
+    JsonDocument payload;
+
+    auto err = deserializeJson(payload, server.arg("plain"));
+    if (err) { server.send(400, "text/plain", "Invalid JSON"); return; }
+
+    const char *ssid = payload["ssid"];
+    const char *pass = payload["pass"];
+
+    Serial.printf("Saving WIFI credentials ssid: %s pass: %s\n", ssid, pass);
+    
+    if (!ssid) {
+      server.send(400, "text/plain", "Missing 'SSID'");
+      return;
+    }
+    if (!pass) {
+      pass = "";
+    }
+
+    netCfg.ssid = ssid;
+    netCfg.pass = pass;
+    
+    storage::clearCredentials();
+
+    if (!storage::saveNetCfg(netCfg)) {
+      server.send(400, "text/plain", "Failed to save preferences, try again.");
+      return;
+    }
+    
+    JsonDocument out;
+    out["status"] = "success";
+  
+    String s;
+    serializeJson(out, s);
+    server.send(200, "application/json", s);
+  }
 }
 
 namespace http_server {
@@ -265,6 +319,7 @@ namespace http_server {
     server.on("/api/led", HTTP_GET, api::handleGetLed);
     server.on("/api/led", HTTP_POST, api::handlePostLed);
     server.on("/api/wifi", HTTP_GET, api::handleGetWifi);
+    server.on("/api/wifi", HTTP_POST, api::handlePostWifi);
 
     server.onNotFound([]() {
       server.send(404, "text/plain", "Not Found");
@@ -274,8 +329,6 @@ namespace http_server {
   }
   
 }
-
-
 
 void setPixel(LedRGB rgb) {
   M5.dis.drawpix(0, CRGB(rgb.r, rgb.g, rgb.b));
@@ -288,7 +341,7 @@ void setup() {
   M5.dis.clear();
   ledBlinker.init(setPixel);
 
-  ledBlinker.set_blink({255, 165, 0}, {0, 0, 0});
+  ledBlinker.set_blink(COLOR_ORANGE,COLOR_BLACK);
   
   if (!LittleFS.begin(true)) {
     Serial.println("[ERROR]: Error has occurred with serial filesystem");
@@ -300,6 +353,9 @@ void setup() {
     change_state(State::PROVISIONING_MODE);
   } else {
     Serial.println("Found credentials, entering operations mode");
+    storage::loadNetCfg(netCfg);
+    
+    Serial.printf("SSID: %s, Pass: %s", netCfg.ssid.c_str(), netCfg.pass.c_str());
     change_state(State::OPERATION_MODE);
   }
 
@@ -309,17 +365,30 @@ void setup() {
     http_server::initAPServer();
     delay(100);
     change_state(State::PM_CONNECT_WAIT);
+    ledBlinker.set_blink(COLOR_ORANGE, COLOR_BLACK);
     break;
   case State::OPERATION_MODE:
     storage::loadNetCfg(netCfg);
     // Connect to wifi
-
     change_state(State::PM_CONNECT_WAIT);
+    ledBlinker.set_blink(COLOR_BLUE, COLOR_BLACK, 1000);
+    ledBlinker.tick();
+    WiFi.begin(netCfg.ssid, netCfg.pass);
+    Serial.printf("Connecting to WiFi network %s\n", netCfg.ssid.c_str());
+
+    while (WiFi.status() != WL_CONNECTED) {
+      Serial.printf("Connecting... %u\n", WiFi.status());
+      delay(500);
+      ledBlinker.tick(); 
+    }
+    Serial.println("Connected to WiFi network");
+    change_state(State::OP_CONNECT_WAIT);
+    ledBlinker.set_solid(COLOR_GREEN);
     break;
+  default:
+    Serial.println("Default state");
   }
   Serial.println("[INFO]: M5 App Setup Done");
-  
-
 }
 
 u_long lastTime = millis();
@@ -344,7 +413,7 @@ void loop() {
     break;
   case OP_CONNECT_WAIT:
     if (dt > 1000) {
-      Serial.println("Should get here yet.");
+      Serial.println("Wifi Connection was successful.");
     }
     break;
   default:
