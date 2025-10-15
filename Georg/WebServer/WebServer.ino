@@ -1,11 +1,28 @@
 /*
 *******************************************************************************
-* M5Stack Atom Lite — WiFi AP + HTML <input type="color"> + Settings (no JS)
-* - AP mode only (V1)
-* - /      -> HTML (color picker + settings form)
-* - /set   -> applies LED color from ?value=%23RRGGBB
-* - /wifi  -> saves ssid/pass (and optional token) into NVS
-192.168.4.1
+* M5Stack Atom Lite — WiFi AP + LED Color Control (SIMPLE VERSION)
+* 
+* FEATURES:
+* - Single page interface - everything on one page
+* - LED color picker with live preview
+* - Basic WiFi credentials form (no validation)
+* - Saves settings to NVS flash memory
+* 
+* ENDPOINTS:
+* - /      -> Main page (color picker + WiFi settings form)
+* - /set   -> Applies LED color from ?value=%23RRGGBB
+* - /wifi  -> Saves SSID/password/token to flash (no password verification)
+* 
+* LIMITATIONS:
+* - No password validation or confirmation
+* - Shows saved password in plain text on form
+* - No separate settings page
+* - Minimal error handling
+* 
+* USE CASE: Quick setup, testing, or when security is not a concern
+* 
+* Access Point: M5Stack_Ap / 66666666
+* Default IP: 192.168.4.1
 *******************************************************************************
 */
 

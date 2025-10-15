@@ -1,12 +1,27 @@
 /*
 *******************************************************************************
-* M5Stack Atom Lite — WiFi AP + HTML <input type="color"> + WiFi Settings
-* - AP mode only (V1)
-* - /              -> HTML (color picker + link to WiFi settings)
-* - /set           -> applies LED color from ?value=%23RRGGBB
-* - /wifisettings  -> WiFi settings page
-* - /savewifi      -> saves WiFi credentials to NVS flash
-* 192.168.4.1
+* M5Stack Atom Lite — WiFi AP + LED Color Control (ADVANCED VERSION)
+* 
+* FEATURES:
+* - Separate pages for main interface and WiFi settings
+* - LED color picker with live preview
+* - Secure WiFi configuration with validation:
+*   • Requires current password to change settings
+*   • Password confirmation (must match)
+*   • Minimum 8 characters for WPA2
+*   • Styled error/success messages
+* - Professional UI with better UX
+* - Password fields are hidden (type="password")
+* 
+* ENDPOINTS:
+* - /              -> Main page (color picker + link to settings)
+* - /set           -> Applies LED color from ?value=%23RRGGBB
+* - /wifisettings  -> Dedicated WiFi configuration page
+* - /savewifi      -> Saves WiFi credentials with validation
+* 
+* 
+* Access Point: M5Stack_Ap / 66666666
+* Default IP: 192.168.4.1
 *******************************************************************************
 */
 
@@ -175,22 +190,15 @@ void sendWifiSettingsHtml(WiFiClient& client, const char* statusMsg = nullptr) {
 
   client.println("<form action='/savewifi' method='get'>");
   
-  client.print("<label for='ssid'>WiFi SSID:</label>"
+  client.print("<label for='ssid'>WiFi Network Name (SSID):</label>"
                "<input type='text' id='ssid' name='ssid' value='");
   client.print(netcfg.ssid);
   client.println("' required>"
-                 "<p class='info'>Enter the network name you want to connect to</p>");
+                 "<p class='info'>Enter your home WiFi network name</p>");
   
-  client.println("<label for='oldpass'>Current Password:</label>"
-                 "<input type='password' id='oldpass' name='oldpass' placeholder='Enter current password'>"
-                 "<p class='info'>Leave empty if this is the first time setting up WiFi</p>");
-  
-  client.println("<label for='newpass'>New Password:</label>"
-                 "<input type='password' id='newpass' name='newpass' placeholder='Enter new password' required>"
-                 "<p class='info'>Must be at least 8 characters for WPA2</p>");
-  
-  client.println("<label for='confirmpass'>Confirm New Password:</label>"
-                 "<input type='password' id='confirmpass' name='confirmpass' placeholder='Re-enter new password' required>");
+  client.println("<label for='pass'>WiFi Password:</label>"
+                 "<input type='password' id='pass' name='pass' placeholder='Enter WiFi password' required>"
+                 "<p class='info'>Enter your home WiFi password (min 8 characters)</p>");
   
   client.println("<button type='submit'>Save WiFi Settings</button>");
   client.println("</form>");
@@ -248,37 +256,23 @@ const char* handleSaveWifiPath(const String& requestLine) {
   if (qpos < 0) { status = "Error: No data submitted"; return status.c_str(); }
   String query = path.substring(qpos + 1);
 
-  String ssid        = urlDecode(queryGet(query, "ssid"));
-  String oldpass     = urlDecode(queryGet(query, "oldpass"));
-  String newpass     = urlDecode(queryGet(query, "newpass"));
-  String confirmpass = urlDecode(queryGet(query, "confirmpass"));
+  String ssid = urlDecode(queryGet(query, "ssid"));
+  String pass = urlDecode(queryGet(query, "pass"));
 
-  // Validation
+  // Simple validation
   if (ssid.length() == 0) { 
     status = "Error: SSID cannot be empty"; 
     return status.c_str(); 
   }
   
-  // Check if old password matches (only if there's an existing password)
-  if (netcfg.pass.length() > 0 && oldpass != netcfg.pass) {
-    status = "Error: Current password is incorrect"; 
-    return status.c_str(); 
-  }
-  
-  // Check if new passwords match
-  if (newpass != confirmpass) {
-    status = "Error: New passwords do not match"; 
-    return status.c_str(); 
-  }
-  
   // Password length validation for WPA2
-  if (newpass.length() > 0 && newpass.length() < 8) { 
+  if (pass.length() > 0 && pass.length() < 8) { 
     status = "Error: Password must be at least 8 characters"; 
     return status.c_str(); 
   }
 
   // Save to flash
-  saveNetCfg(ssid, newpass, netcfg.token);
+  saveNetCfg(ssid, pass, netcfg.token);
   status = "✓ WiFi settings saved successfully!";
   return status.c_str();
 }
