@@ -185,7 +185,8 @@ namespace network {
     WiFi.mode(WIFI_MODE_APSTA);
     bool ok = WiFi.softAP(AP_WIFI_SSID, AP_WIFI_PASS);
     Serial.println("\nWIFI ACCESS POINT (fallback)");
-    Serial.printf("SSID: %s  PASS: %s\n", AP_WIFI_SSID, AP_WIFI_SSID);
+    // BUGFIX: Changed second parameter from AP_WIFI_SSID to AP_WIFI_PASS (was printing SSID twice)
+    Serial.printf("SSID: %s  PASS: %s\n", AP_WIFI_SSID, AP_WIFI_PASS);
     Serial.printf("AP IP: %s\n", WiFi.softAPIP().toString().c_str());
   }
 }
@@ -367,28 +368,61 @@ void setup() {
     change_state(State::PM_CONNECT_WAIT);
     ledBlinker.set_blink(COLOR_ORANGE, COLOR_BLACK);
     break;
-  case State::OPERATION_MODE:
+  case State::OPERATION_MODE: {
+    // BUGFIX: Added braces to allow variable declarations in switch case
     storage::loadNetCfg(netCfg);
-    // Connect to wifi
+    
+    // BUGFIX: Set WiFi mode to STA (Station) before connecting
+    // Previously this was missing, which could cause connection issues
+    WiFi.mode(WIFI_MODE_STA);
+    
+    // BUGFIX: Disable auto-reconnect to allow our timeout logic to work
+    // Without this, ESP32 keeps trying to reconnect indefinitely
+    WiFi.setAutoReconnect(false);
+    
     change_state(State::PM_CONNECT_WAIT);
     ledBlinker.set_blink(COLOR_BLUE, COLOR_BLACK, 1000);
     ledBlinker.tick();
+    
     WiFi.begin(netCfg.ssid, netCfg.pass);
     Serial.printf("Connecting to WiFi network %s\n", netCfg.ssid.c_str());
 
-    while (WiFi.status() != WL_CONNECTED) {
+    // BUGFIX: Added timeout to prevent infinite loop if WiFi fails
+    // Waits max 20 seconds (40 attempts × 500ms)
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 40) {
       Serial.printf("Connecting... %u\n", WiFi.status());
       delay(500);
-      ledBlinker.tick(); 
+      ledBlinker.tick();
+      attempts++;
     }
-    Serial.println("Connected to WiFi network");
-    change_state(State::OP_CONNECT_WAIT);
-    ledBlinker.set_solid(COLOR_GREEN);
+    
+    // BUGFIX: Check if connection succeeded or timed out
+    if (WiFi.status() == WL_CONNECTED) {
+      // Successfully connected to WiFi
+      Serial.println("Connected to WiFi network");
+      change_state(State::OP_CONNECT_WAIT);
+      ledBlinker.set_solid(COLOR_GREEN);
+    } else {
+      // BUGFIX: Connection failed - clear bad credentials and fall back to AP mode
+      // This allows user to reconfigure WiFi instead of being stuck
+      Serial.println("Failed to connect, falling back to AP mode");
+      storage::clearCredentials();
+      network::initAPWiFi();
+      http_server::initAPServer();
+      change_state(State::PM_CONNECT_WAIT);
+      ledBlinker.set_blink(COLOR_ORANGE, COLOR_BLACK);
+    }
     break;
-  default:
-    Serial.println("Default state");
   }
-  Serial.println("[INFO]: M5 App Setup Done");
+  default: {
+    // BUGFIX: Added braces for consistency with other cases
+    Serial.println("Default state");
+    break;
+  }
+  } // End of switch statement 
+
+  Serial.println("[INFO]: M5 App Setup Done"); 
 }
 
 u_long lastTime = millis();
