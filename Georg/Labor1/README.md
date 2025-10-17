@@ -35,18 +35,32 @@ LED frequency perception test for human visual response analysis.
 ---
 
 ### 2. **Test2-OverLoadandStability**
-ESP32 overload and stability test for web API performance analysis.
+ESP32 overload and stability test for web API performance analysis using browser-based testing.
 
 **Purpose**: Determine the maximum stable command frequency for LED color changes via HTTP API to establish throttling limits for web interfaces.
 
+**Two Testing Approaches**:
+
+#### **Approach 1: Sequential with Delays** (`Sequential/`)
+- Sends requests one at a time with delays
+- Good for baseline testing
+- Shows minimum response times under no load
+- Results typically show all green (no failures)
+
+#### **Approach 2: Concurrent without Delays** (`Concurrent/`)
+- Sends multiple requests simultaneously
+- Real stress testing approach
+- Finds actual performance limits
+- Shows system behavior under heavy load
+
 **Features**:
-- Self-contained test (runs both server and client)
-- Tests frequencies: 10, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100 cmd/s
+- Browser-based testing interface at `/test` endpoint
+- Tests frequencies: 10, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000 cmd/s
 - 30-second test duration per frequency level
 - Automatic response time measurement (min/avg/max)
-- GET verification to detect dropped commands
 - Success/failure rate tracking
-- Comprehensive final report with recommendations
+- Color-coded results table
+- Comprehensive final report with throttling recommendations
 
 **Hardware**: M5Stack Atom Lite (WS2812B RGB LED on GPIO 27)
 
@@ -58,20 +72,26 @@ ESP32 overload and stability test for web API performance analysis.
 **Access**:
 - **SSID**: M5Stack_Test
 - **Password**: 12345678
-- **IP**: 192.168.4.1
+- **IP**: http://192.168.4.1
+- **Test Page**: http://192.168.4.1/test
 
 **Usage**:
-1. Upload `Test2-OverLoadandStability.ino` to M5 Atom Lite
-2. Open Serial Monitor (115200 baud)
-3. Wait for green LED to blink 3 times (server ready)
-4. Press button to start test
-5. Watch progress for ~5.5 minutes
-6. View results table with throttling recommendations
-7. LED blinks blue 5 times when complete
+1. Choose version: Sequential or Concurrent
+2. Upload code to M5 Atom Lite
+3. Connect to WiFi: M5Stack_Test / 12345678
+4. Open browser: http://192.168.4.1
+5. Click "Launch Overload Test"
+6. Click "Start Test" button
+7. Wait ~6 minutes for completion
+8. View color-coded results and recommendations
 
 **Files**:
-- `Test2-OverLoadandStability.ino` - Main overload test program
-- `README.md` - Detailed test methodology and implementation guide
+- `Sequential/Test2-OverLoadandStability-Seq.ino` - Sequential test version
+- `Concurrent/Test2-OverLoadandStability-Con.ino` - Concurrent test version
+- `README/README.md` - Detailed methodology, comparison, and implementation guide
+- `img/` - Test result screenshots and comparison diagrams
+
+**Recommendation**: Use **Concurrent version** for realistic performance testing and production throttling values.
 
 ---
 

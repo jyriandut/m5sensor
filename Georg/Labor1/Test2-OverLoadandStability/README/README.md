@@ -208,52 +208,229 @@ Based on the requirements and reference files, here are the approaches we can ta
 
 ---
 
-## 6. Final Implementation Details
+## 6. Final Implementation: Browser-Based Testing
 
-### **Key Features**
+We implemented **browser-based HTTP testing** using JavaScript. The M5 Atom runs a web server with a `/test` endpoint that provides an interactive testing interface.
 
-#### **Web Server (Built-in)**
+### **Two Testing Approaches Available**
+
+We have implemented **two versions** of the test to demonstrate different testing methodologies:
+
+---
+
+## 7. Test Approach Comparison
+
+### **Approach 1: Sequential with Delays** 📁 `Sequential/`
+
+![Sequential Test Results](../img/OverLaodTest-Sequential.jpg)
+
+#### **How It Works:**
+```javascript
+const delay = 1000/freq;  // Calculate delay between requests
+while(Date.now() - startTime < testDuration) {
+  const result = await sendSetRequest(color);  // Send ONE request
+  // Process result...
+  await new Promise(r => setTimeout(r, delay));  // WAIT before next request
+}
+```
+
+#### **Behavior:**
+- **Sequential execution**: Sends one request, waits for response, then sends next
+- **Artificial delays**: Adds `setTimeout(delay)` between each request
+- **Example at 1000 cmd/s**:
+  - Target: 1 request every 1ms (1000/sec)
+  - Reality: 1 request → wait ~40ms for response → wait 1ms delay → next request
+  - **Actual rate**: ~24 requests/second (not 1000!)
+
+#### **Why Results Are "Too Good":**
+- Browser is **never stressed** - only 1 request at a time
+- M5 Atom is **never stressed** - has 40ms+ to process each request
+- The test measures "can the server handle 24 requests/second?" (YES)
+- Not measuring "can it handle 1000 requests/second?" (UNKNOWN)
+
+#### **Use Case:**
+- Good for **baseline testing**
+- Verifies basic functionality
+- Shows minimum response times under no load
+
+---
+
+### **Approach 2: Concurrent Without Delays** 📁 `Concurrent/`
+
+![Concurrent Test Results](../img/OverLaodTest-Conqurrent.PNG)
+
+#### **How It Works:**
+```javascript
+const targetRequests = freq * testDuration / 1000;  // Total requests needed
+const promises = [];
+
+for(let i = 0; i < targetRequests; i++) {
+  const promise = sendSetRequest(color);  // Start request (don't wait!)
+  promises.push(promise);
+  
+  if(promises.length >= freq) {
+    await Promise.race(promises);  // Wait for ANY one to finish
+  }
+}
+await Promise.all(promises);  // Wait for all to complete
+```
+
+#### **Behavior:**
+- **Concurrent execution**: Sends multiple requests simultaneously
+- **No artificial delays**: Requests fire as fast as possible
+- **Example at 1000 cmd/s**:
+  - Starts up to 1000 requests concurrently
+  - Maintains high concurrency throughout test
+  - Total: 30,000 requests over 30 seconds
+
+#### **Concurrency Levels:**
+
+![Concurrency Levels](../img/Concurrency_levels.PNG)
+
+| Frequency | Total Requests | Max Concurrent |
+|-----------|---------------|----------------|
+| 10 cmd/s  | 300           | ~10            |
+| 100 cmd/s | 3,000         | ~100           |
+| 1000 cmd/s| 30,000        | ~1000          |
+
+#### **Why This Stresses The System:**
+1. **Network stack overload**: Many simultaneous HTTP connections
+2. **Memory pressure**: Each connection uses RAM on M5 Atom
+3. **Processing queue**: Server must handle many requests in parallel
+4. **WiFi congestion**: Radio can't handle that many concurrent transmissions
+
+#### **Use Case:**
+- **Real stress testing**
+- Finds actual performance limits
+- Shows system behavior under load
+- Reveals breaking points
+
+---
+
+## 8. Key Differences Summary
+
+![Key Differences](../img/KeyDifferencesSummary.PNG)
+
+| Aspect | Sequential (Approach 1) | Concurrent (Approach 2) |
+|--------|------------------------|------------------------|
+| **Requests at once** | 1 | Up to `freq` |
+| **Delays** | Yes (artificial) | No |
+| **Actual load** | ~24 req/s | Up to 1000 req/s |
+| **Browser throttling** | Not triggered | Fully triggered |
+| **Server stress** | Minimal | Maximum |
+| **Results** | All green (false positive) | Shows real limits |
+| **What it tests** | "Can handle 1 request at a time?" | "Can handle X concurrent requests?" |
+
+### **Why Sequential Failed to Find Limits:**
+
+The formula `delay = 1000/freq` assumed:
+- Request time = 0ms (instant)
+- Only delay matters
+
+But reality:
+- Request time = ~40ms (network + processing)
+- Delay = 1ms (at 1000 cmd/s)
+- **Total time per request = 41ms**
+- **Actual frequency = 1000/41 ≈ 24 requests/second**
+
+So even at "1000 cmd/s" setting, you were only achieving **24 requests/second** - well within the M5 Atom's capabilities!
+
+### **Analogy:**
+
+**Sequential Test** = Testing if a restaurant can handle customers by sending one person, waiting for them to finish their meal, then sending the next person. (Easy!)
+
+**Concurrent Test** = Testing if a restaurant can handle customers by sending 1000 people at once and seeing what happens. (Chaos!)
+
+The concurrent test reveals the **real capacity limits**.
+
+---
+
+## 9. Implementation Details
+
+### **Common Features (Both Versions)**
+
+#### **Web Server**
 - **`/get`** endpoint - Returns current LED color as JSON
 - **`/set?color=%23RRGGBB`** endpoint - Sets LED color
+- **`/test`** endpoint - Browser-based test interface
 - Runs on WiFi AP: `M5Stack_Test` / `12345678` at `192.168.4.1`
 
-#### **HTTP Client (Self-Testing)**
-- Sends SET requests at increasing frequencies (10-100 cmd/s)
-- Measures response times for each request
-- Verifies with GET requests to detect dropped commands
-- Tracks success/failure rates
-
-#### **Test Sequence**
-1. **11 frequency levels**: 10, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100 cmd/s
-2. **30 seconds** per frequency level
-3. **Automatic analysis** with recommendations
+#### **Test Configuration**
+- **12 frequency levels**: 10, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000 cmd/s
+- **30 seconds** per frequency level
+- **~6 minutes** total test duration
 
 #### **Metrics Tracked**
 - ✅ Total requests sent
 - ✅ Successful/failed requests
 - ✅ Response times (min/avg/max)
-- ✅ Dropped commands (via GET verification)
 - ✅ Success rate percentage
 
 #### **Final Report Includes**
-- **Maximum Stable Frequency** (>95% success, <200ms avg, no drops)
+- **Maximum Stable Frequency** (>95% success, <200ms avg)
 - **Graceful Degradation Point** (>80% success, <500ms avg)
-- **Critical Failure Point** (<50% success or commands dropped)
+- **Critical Failure Point** (<50% success)
 - **Throttling recommendation** for web interface
 
 ---
 
-### **How to Use**
+## 10. How to Use
 
-1. **Upload** the code (`Test2-OverLoadandStability.ino`) to your M5 Atom Lite
-2. **Open Serial Monitor** at 115200 baud
-3. Wait for the green LED to blink 3 times (server ready)
-4. **Press the button** on the M5 Atom to start the test
-5. Watch the Serial Monitor for real-time progress:
-   - `.` = successful request
-   - `X` = failed request
-6. After approximately **5.5 minutes**, view the complete results table and recommendations
-7. LED blinks blue 5 times when test is complete
-8. Press button again to run another test if needed
+### **Setup:**
+1. **Choose version**: Sequential or Concurrent
+2. **Upload** the code to your M5 Atom Lite
+3. **Connect** to WiFi: `M5Stack_Test` / `12345678`
+4. **Open browser**: `http://192.168.4.1`
 
-**Note:** The test is fully automated and self-contained. No external computer or scripts are needed beyond the Serial Monitor for viewing results.
+### **Running the Test:**
+1. Click **"Launch Overload Test"**
+2. Click **"Start Test"** button
+3. Watch real-time progress
+4. Wait for test completion (~6 minutes)
+5. View color-coded results table
+6. Read throttling recommendation
+
+### **Understanding Results:**
+
+- 🟢 **Green rows**: Good performance (>95% success, <200ms avg)
+- 🟡 **Yellow rows**: Warning (>80% success, <500ms avg)
+- 🔴 **Red rows**: Poor performance (<80% success or >500ms avg)
+
+---
+
+## 11. Files Structure
+
+```
+Test2-OverLoadandStability/
+├── Sequential/
+│   └── Test2-OverLoadandStability-Seq.ino    # Sequential with delays
+├── Concurrent/
+│   └── Test2-OverLoadandStability-Con.ino    # Concurrent without delays
+├── img/
+│   ├── OverLaodTest-Sequential.jpg           # Sequential results
+│   ├── OverLaodTest-Sequential_2.jpg         # Sequential results detail
+│   ├── OverLaodTest-Conqurrent.PNG           # Concurrent results
+│   ├── Concurrency_levels.PNG                # Concurrency explanation
+│   └── KeyDifferencesSummary.PNG             # Comparison table
+└── README/
+    └── README.md                              # This file
+```
+
+---
+
+## 12. Recommendations
+
+### **For Learning/Demonstration:**
+- Use **both versions** to understand the difference
+- Start with Sequential to see baseline performance
+- Then run Concurrent to find real limits
+
+### **For Production Testing:**
+- Use **Concurrent version** for realistic results
+- Set web interface throttling based on Concurrent test results
+- Consider safety margin (e.g., if max is 400 cmd/s, throttle at 300 cmd/s)
+
+### **For Web Interface:**
+- Implement throttling based on test results
+- Add visual feedback when throttling is active
+- Consider adaptive throttling based on response times
