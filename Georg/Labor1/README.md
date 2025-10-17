@@ -34,7 +34,48 @@ LED frequency perception test for human visual response analysis.
 
 ---
 
-### 2. **Pressure**
+### 2. **Test2-OverLoadandStability**
+ESP32 overload and stability test for web API performance analysis.
+
+**Purpose**: Determine the maximum stable command frequency for LED color changes via HTTP API to establish throttling limits for web interfaces.
+
+**Features**:
+- Self-contained test (runs both server and client)
+- Tests frequencies: 10, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100 cmd/s
+- 30-second test duration per frequency level
+- Automatic response time measurement (min/avg/max)
+- GET verification to detect dropped commands
+- Success/failure rate tracking
+- Comprehensive final report with recommendations
+
+**Hardware**: M5Stack Atom Lite (WS2812B RGB LED on GPIO 27)
+
+**Dependencies**: 
+- M5Atom library
+- WiFi library (built-in)
+- HTTPClient library (built-in)
+
+**Access**:
+- **SSID**: M5Stack_Test
+- **Password**: 12345678
+- **IP**: 192.168.4.1
+
+**Usage**:
+1. Upload `Test2-OverLoadandStability.ino` to M5 Atom Lite
+2. Open Serial Monitor (115200 baud)
+3. Wait for green LED to blink 3 times (server ready)
+4. Press button to start test
+5. Watch progress for ~5.5 minutes
+6. View results table with throttling recommendations
+7. LED blinks blue 5 times when complete
+
+**Files**:
+- `Test2-OverLoadandStability.ino` - Main overload test program
+- `README.md` - Detailed test methodology and implementation guide
+
+---
+
+### 3. **Pressure**
 Analog pressure sensor reading and monitoring.
 
 **Purpose**: Read analog pressure sensor values and display them via Serial Monitor for calibration and testing.
@@ -63,7 +104,7 @@ Analog pressure sensor reading and monitoring.
 
 ---
 
-### 3. **WebServer**
+### 4. **WebServer**
 WiFi Access Point with LED color control web interface (Simple Version).
 
 **Purpose**: Create a WiFi hotspot on M5 Atom Lite with a web-based LED color picker and WiFi configuration storage.
@@ -104,7 +145,7 @@ WiFi Access Point with LED color control web interface (Simple Version).
 
 ---
 
-### 4. **WebServer_WifiSetup**
+### 5. **WebServer_WifiSetup**
 WiFi Access Point with LED color control and secure configuration (Advanced Version).
 
 **Purpose**: Professional web interface with secure WiFi configuration, password validation, and better UX.
@@ -149,7 +190,7 @@ WiFi Access Point with LED color control and secure configuration (Advanced Vers
 
 ---
 
-### 5. **Qr-code**
+### 6. **Qr-code**
 WiFi QR code generator for easy M5Stack connection.
 
 **Purpose**: Generate QR codes for automatic WiFi connection and web interface access - no manual typing needed!
