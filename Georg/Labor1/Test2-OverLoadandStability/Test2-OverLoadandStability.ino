@@ -28,7 +28,7 @@
 // WiFi AP Configuration
 const char* ap_ssid     = "M5Stack_Test";
 const char* ap_password = "12345678";
-const char* serverIP    = "192.168.4.1";
+const char* serverIP    = "127.0.0.1"; // Use localhost for self-testing
 
 WiFiServer server(80);
 
@@ -37,8 +37,8 @@ uint32_t currentColor = 0x00FF00; // Start with green
 uint32_t lastSetColor = 0x00FF00;
 
 // Test configuration
-const int testFrequencies[] = {10, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100};
-const int numFrequencies = 11;
+const int testFrequencies[] = {10, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000};
+const int numFrequencies = 12;
 const int testDuration = 30000; // 30 seconds per frequency level
 
 // Test state
@@ -57,7 +57,7 @@ struct TestResults {
   float minResponseTime;
 };
 
-TestResults results[11]; // Store results for each frequency
+TestResults results[12]; // Store results for each frequency
 int currentTestIndex = 0;
 
 // --- Helper Functions ---
@@ -99,6 +99,131 @@ bool parseHexColor(String hex, uint32_t& outColor) {
 }
 
 // --- HTTP Server Functions ---
+
+void sendTestPage(WiFiClient& client) {
+  client.println("HTTP/1.1 200 OK");
+  client.println("Content-Type: text/html; charset=utf-8");
+  client.println("Connection: close");
+  client.println();
+  
+  client.println("<!DOCTYPE html><html><head><meta charset='utf-8'>");
+  client.println("<meta name='viewport' content='width=device-width, initial-scale=1'>");
+  client.println("<title>M5 Overload Test</title>");
+  client.println("<style>");
+  client.println("body{font-family:system-ui,sans-serif;margin:2rem;background:#f5f5f5}");
+  client.println(".container{max-width:900px;margin:0 auto;background:white;padding:2rem;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,0.1)}");
+  client.println("h1{color:#333;margin-top:0}");
+  client.println("button{padding:12px 24px;font-size:16px;background:#0066cc;color:white;border:none;border-radius:6px;cursor:pointer;margin:10px 5px}");
+  client.println("button:hover{background:#0052a3}");
+  client.println("button:disabled{background:#ccc;cursor:not-allowed}");
+  client.println("#status{padding:15px;margin:20px 0;border-radius:6px;font-weight:500}");
+  client.println(".running{background:#fff3cd;color:#856404;border:1px solid #ffeaa7}");
+  client.println(".complete{background:#d4edda;color:#155724;border:1px solid #c3e6cb}");
+  client.println("table{width:100%;border-collapse:collapse;margin:20px 0}");
+  client.println("th,td{padding:12px;text-align:left;border-bottom:1px solid #ddd}");
+  client.println("th{background:#f8f9fa;font-weight:600}");
+  client.println(".good{color:#28a745}");
+  client.println(".warning{color:#ffc107}");
+  client.println(".bad{color:#dc3545}");
+  client.println(".progress{margin:10px 0;font-size:14px;color:#666}");
+  client.println("</style></head><body>");
+  client.println("<div class='container'>");
+  client.println("<h1>M5 Atom Overload Test</h1>");
+  client.println("<p>This test will send HTTP requests at increasing frequencies to measure server performance.</p>");
+  client.println("<button id='startBtn' onclick='startTest()'>Start Test</button>");
+  client.println("<button onclick='location.reload()'>Reset</button>");
+  client.println("<div id='status'></div>");
+  client.println("<div id='progress'></div>");
+  client.println("<div id='results'></div>");
+  client.println("<script>");
+  
+  // JavaScript test code
+  client.println("const frequencies=[10,50,100,200,300,400,500,600,700,800,900,1000];");
+  client.println("const testDuration=30000;");
+  client.println("let results=[];");
+  client.println("let currentTest=0;");
+  client.println("let isRunning=false;");
+  
+  client.println("function randomColor(){");
+  client.println("const r=Math.floor(Math.random()*256).toString(16).padStart(2,'0');");
+  client.println("const g=Math.floor(Math.random()*256).toString(16).padStart(2,'0');");
+  client.println("const b=Math.floor(Math.random()*256).toString(16).padStart(2,'0');");
+  client.println("return r+g+b;}");
+  
+  client.println("async function sendSetRequest(color){");
+  client.println("const start=performance.now();");
+  client.println("try{");
+  client.println("const response=await fetch(`/set?color=%23${color}`);");
+  client.println("const end=performance.now();");
+  client.println("return{success:response.ok,time:end-start};");
+  client.println("}catch(e){");
+  client.println("return{success:false,time:performance.now()-start};}}");
+  
+  client.println("async function runFrequencyTest(freq){");
+  client.println("document.getElementById('status').className='running';");
+  client.println("document.getElementById('status').textContent=`Testing ${freq} cmd/s...`;");
+  client.println("let total=0,success=0,failed=0,totalTime=0,maxTime=0,minTime=999999;");
+  client.println("const startTime=Date.now();");
+  client.println("const promises=[];");
+  client.println("const targetRequests=freq*testDuration/1000;");
+  client.println("for(let i=0;i<targetRequests;i++){");
+  client.println("const color=randomColor();");
+  client.println("const promise=sendSetRequest(color).then(result=>{");
+  client.println("total++;");
+  client.println("if(result.success){success++;totalTime+=result.time;");
+  client.println("maxTime=Math.max(maxTime,result.time);");
+  client.println("minTime=Math.min(minTime,result.time);}else{failed++;}");
+  client.println("if(total%50===0){");
+  client.println("document.getElementById('progress').innerHTML=");
+  client.println("`<div class='progress'>Progress: ${total}/${targetRequests} requests...</div>`;}");
+  client.println("});");
+  client.println("promises.push(promise);");
+  client.println("if(promises.length>=freq){await Promise.race(promises);}}");
+  client.println("await Promise.all(promises);");
+  client.println("return{freq,total,success,failed,");
+  client.println("avgTime:success>0?totalTime/success:0,");
+  client.println("maxTime:maxTime<999999?maxTime:0,");
+  client.println("minTime:minTime<999999?minTime:0};}");
+  
+  client.println("async function startTest(){");
+  client.println("if(isRunning)return;");
+  client.println("isRunning=true;");
+  client.println("document.getElementById('startBtn').disabled=true;");
+  client.println("results=[];");
+  client.println("for(let i=0;i<frequencies.length;i++){");
+  client.println("const result=await runFrequencyTest(frequencies[i]);");
+  client.println("results.push(result);");
+  client.println("displayResults();}");
+  client.println("document.getElementById('status').className='complete';");
+  client.println("document.getElementById('status').textContent='✓ Test Complete!';");
+  client.println("document.getElementById('progress').innerHTML='';");
+  client.println("isRunning=false;}");
+  
+  client.println("function displayResults(){");
+  client.println("let html='<h2>Results</h2><table><tr>';");
+  client.println("html+='<th>Freq (cmd/s)</th><th>Total</th><th>Success</th><th>Failed</th>';");
+  client.println("html+='<th>Success %</th><th>Avg (ms)</th><th>Max (ms)</th></tr>';");
+  client.println("let maxStable=0;");
+  client.println("results.forEach(r=>{");
+  client.println("const successRate=(r.success/r.total*100).toFixed(1);");
+  client.println("let rowClass='';");
+  client.println("if(successRate>=95&&r.avgTime<200)rowClass='good';");
+  client.println("else if(successRate>=80&&r.avgTime<500)rowClass='warning';");
+  client.println("else rowClass='bad';");
+  client.println("if(successRate>=95&&r.avgTime<200)maxStable=r.freq;");
+  client.println("html+=`<tr class='${rowClass}'><td>${r.freq}</td><td>${r.total}</td>`;");
+  client.println("html+=`<td>${r.success}</td><td>${r.failed}</td>`;");
+  client.println("html+=`<td>${successRate}%</td>`;");
+  client.println("html+=`<td>${r.avgTime.toFixed(1)}</td>`;");
+  client.println("html+=`<td>${r.maxTime.toFixed(1)}</td></tr>`;});");
+  client.println("html+='</table>';");
+  client.println("html+=`<h3>Recommendation</h3>`;");
+  client.println("html+=`<p><strong>Maximum Stable Frequency:</strong> ${maxStable} cmd/s</p>`;");
+  client.println("html+=`<p>Set your web interface throttling to <strong>${maxStable} commands/second</strong> maximum.</p>`;");
+  client.println("document.getElementById('results').innerHTML=html;}");
+  
+  client.println("</script></div></body></html>");
+}
 
 void handleClient() {
   WiFiClient client = server.available();
@@ -160,18 +285,31 @@ void handleClient() {
             break;
           }
           
+          // Handle /test endpoint - browser-based test page
+          else if (requestLine.indexOf("GET /test") >= 0) {
+            sendTestPage(client);
+            break;
+          }
+          
           // Default response
           else {
             client.println("HTTP/1.1 200 OK");
             client.println("Content-Type: text/html");
             client.println("Connection: close");
             client.println();
-            client.println("<!DOCTYPE html><html><body>");
+            client.println("<!DOCTYPE html><html><head>");
+            client.println("<style>body{font-family:sans-serif;margin:2rem}");
+            client.println("a{display:inline-block;padding:12px 24px;background:#0066cc;color:white;");
+            client.println("text-decoration:none;border-radius:6px;margin:10px 0}");
+            client.println("a:hover{background:#0052a3}</style></head><body>");
             client.println("<h1>M5 Atom Overload Test</h1>");
-            client.println("<p>Endpoints:</p>");
+            client.println("<h2>Start Browser Test</h2>");
+            client.println("<a href='/test'>Launch Overload Test</a>");
+            client.println("<h2>API Endpoints:</h2>");
             client.println("<ul>");
             client.println("<li>GET /get - Get current color</li>");
             client.println("<li>GET /set?color=%23RRGGBB - Set color</li>");
+            client.println("<li>GET /test - Browser-based test interface</li>");
             client.println("</ul>");
             client.print("<p>Current color: #");
             client.print(colorToHex(currentColor));
