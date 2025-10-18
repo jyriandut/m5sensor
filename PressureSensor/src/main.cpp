@@ -15,16 +15,9 @@
 #include "esp_wifi_types.h"
 #include "led_blinker.h"
 #include "utils.h"
+#include "config.h"
+#include "wifi_manager.h"
 
-#define NET_CFG "netcfg"
-#define AP_WIFI_SSID "M5Stack_Atom"
-#define AP_WIFI_PASS "66666666"
-#define DEFAULT_LED_COLOR "#00FF00"
-
-#define COLOR_GREEN {0, 200, 0}
-#define COLOR_BLUE {0, 0, 200}
-#define COLOR_ORANGE {120, 255, 0}
-#define COLOR_BLACK {0,0,0}
 
 WebServer server(80);
 Preferences prefs;
@@ -152,46 +145,6 @@ namespace json {
   }
 }
 
-namespace network {
-  typedef struct {
-    String ssid;
-    int32_t rssi;
-    wifi_auth_mode_t auth_mode;
-  } NetworkData;
-
-  void scanWiFiNetworks(std::vector<network::NetworkData> &networks) {
-    Serial.println("Scanning WiFi networks");
-    int n = WiFi.scanNetworks();
-    Serial.println("Scan done");
-
-    if (n == 0) {
-      Serial.println("No networks found");
-    } else {
-      Serial.print(n);
-      Serial.println(" networks found");
-      for (int i = 0; i < n; ++i) {
-
-        const NetworkData n = {
-          WiFi.SSID(i),
-          WiFi.RSSI(i),
-          WiFi.encryptionType(i)
-        };
-        
-        networks.push_back(n);
-      }
-    }
-  }
-
-  void initAPWiFi() {
-    WiFi.mode(WIFI_MODE_APSTA);
-    bool ok = WiFi.softAP(AP_WIFI_SSID, AP_WIFI_PASS);
-    Serial.println("\nWIFI ACCESS POINT (fallback)");
-    // BUGFIX: Changed second parameter from AP_WIFI_SSID to AP_WIFI_PASS (was printing SSID twice)
-    Serial.printf("SSID: %s  PASS: %s\n", AP_WIFI_SSID, AP_WIFI_PASS);
-    Serial.printf("AP IP: %s\n", WiFi.softAPIP().toString().c_str());
-  }
-}
-
 namespace api {
   void handlePostLed() {
     if (server.method() != HTTP_POST) {
@@ -241,8 +194,8 @@ namespace api {
   }
 
   void handleGetWifi() {
-    std::vector<network::NetworkData> networks;
-    network::scanWiFiNetworks(networks);
+    std::vector<wifi_manager::NetworkData> networks;
+    wifi_manager::scan_wifi_networks(networks);
     JsonDocument doc;
     JsonObject obj = doc.to<JsonObject>();
     JsonArray arr = obj["networks"].to<JsonArray>();
@@ -363,7 +316,8 @@ void setup() {
 
   switch (state) {
   case State::PROVISIONING_MODE:
-    network::initAPWiFi();
+    wifi_manager::init_ap_wifi();
+    
     http_server::initAPServer();
     delay(100);
     change_state(State::PM_CONNECT_WAIT);
@@ -404,7 +358,7 @@ void setup() {
       // This allows user to reconfigure WiFi instead of being stuck
       Serial.println("Failed to connect, falling back to AP mode");
       storage::clearCredentials();
-      network::initAPWiFi();
+      wifi_manager::init_ap_wifi();
       http_server::initAPServer();
       change_state(State::PM_CONNECT_WAIT);
       ledBlinker.set_blink(COLOR_ORANGE, COLOR_BLACK);
