@@ -1,7 +1,4 @@
 #include <M5Atom.h>
-#include <WiFi.h>
-#include <WiFiClient.h>
-#include <WiFiAP.h>
 #include <Preferences.h>
 #include <ArduinoJson.h>
 #include <WebServer.h>
@@ -9,10 +6,8 @@
 #include <cstdint>
 #include <sys/types.h>
 #include <vector>
-#include "WiFiType.h"
 #include "crgb.h"
 #include "esp32-hal.h"
-#include "esp_wifi_types.h"
 #include "led_blinker.h"
 #include "utils.h"
 #include "config.h"
@@ -324,45 +319,18 @@ void setup() {
     ledBlinker.set_blink(COLOR_ORANGE, COLOR_BLACK);
     break;
   case State::OPERATION_MODE: {
-    // BUGFIX: Added braces to allow variable declarations in switch case
     storage::loadNetCfg(netCfg);
-    // BUGFIX: Set WiFi mode to STA (Station) before connecting
-    // Previously this was missing, which could cause connection issues
-    WiFi.mode(WIFI_MODE_STA);
-    // BUGFIX: Disable auto-reconnect to allow our timeout logic to work
-    // Without this, ESP32 keeps trying to reconnect indefinitely
-    WiFi.setAutoReconnect(false);
-    change_state(State::PM_CONNECT_WAIT);
-    ledBlinker.set_blink(COLOR_BLUE, COLOR_BLACK, 1000);
-    ledBlinker.tick();
-    WiFi.begin(netCfg.ssid, netCfg.pass);
-    Serial.printf("Connecting to WiFi network %s\n", netCfg.ssid.c_str());
-
-    // BUGFIX: Added timeout to prevent infinite loop if WiFi fails
-    // Waits max 20 seconds (40 attempts × 500ms)
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 40) {
-      Serial.printf("Connecting... %u\n", WiFi.status());
-      delay(500);
-      ledBlinker.tick();
-      attempts++;
-    }
-    // BUGFIX: Check if connection succeeded or timed out
-    if (WiFi.status() == WL_CONNECTED) {
-      // Successfully connected to WiFi
-      Serial.println("Connected to WiFi network");
+    auto connected =
+        wifi_manager::init_sta_wifi(netCfg.ssid, netCfg.pass, ledBlinker);    
+    
+    if (connected) {
       change_state(State::OP_CONNECT_WAIT);
-      ledBlinker.set_solid(COLOR_GREEN);
+      // init new server
     } else {
-      // BUGFIX: Connection failed - clear bad credentials and fall back to AP mode
-      // This allows user to reconfigure WiFi instead of being stuck
-      Serial.println("Failed to connect, falling back to AP mode");
       storage::clearCredentials();
-      wifi_manager::init_ap_wifi();
-      http_server::initAPServer();
-      change_state(State::PM_CONNECT_WAIT);
-      ledBlinker.set_blink(COLOR_ORANGE, COLOR_BLACK);
+      utils::system_restart();
     }
+
     break;
   }
   default: {

@@ -1,4 +1,5 @@
 #pragma once
+#include "esp_system.h"
 #include <Arduino.h>
 #include <cstdint>
 
@@ -17,6 +18,13 @@ namespace utils {
       return false;
     }
   };
+
+
+  inline void system_restart() {
+    Serial.println("Rebooting in 2 seconds ...");
+    delay(2000);
+    esp_restart();
+  }
   
 } // namespace utils
 

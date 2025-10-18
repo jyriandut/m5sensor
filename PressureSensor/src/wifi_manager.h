@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <vector>
+#include "led_blinker.h"
 #include "config.h"
 
 namespace wifi_manager {
@@ -13,6 +14,8 @@ namespace wifi_manager {
 
   void init_ap_wifi();
 
+  bool init_sta_wifi(const String ssid, const String password, LedBlinker& ledBlinker);
+  
   void scan_wifi_networks(std::vector<NetworkData> &networks);
   
 }
