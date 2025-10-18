@@ -14,41 +14,19 @@
 #include "wifi_manager.h"
 
 
-WebServer server(80);
-Preferences prefs;
-
-typedef struct {
+struct NetCfg {
   String ssid;
   String pass;
-  String token; // optional auth token for future use
-} NetCfg;
-
-// first startup:
-// enable AP_STA mode for wifi
-// wait for connection
-// connection received
-// scanning networks
-
-enum State {
-  NOOP,
-  START_SETUP,
-  PROVISIONING_MODE,
-  OPERATION_MODE,
-  PM_CONNECT_WAIT,
-  OP_CONNECT_WAIT
+  String token; 
 };
 
-static State state = NOOP;
-
-static void change_state(State next) {
-  if (next == state) return;
-  state = next;
-  Serial.printf("→ State changed to %d\n", state);
-}
-
+WebServer server(80);
+Preferences prefs;
 LedBlinker ledBlinker;
+NetCfg netCfg {};
+utils::Timer timer{1000, millis()};
+utils::StateMachine state{State::NOOP};
 
-NetCfg netCfg {}; 
 
 namespace storage {
   bool saveNetCfg(const NetCfg& cfg) {
@@ -131,16 +109,14 @@ namespace led {
   }
 }
 
-namespace json {
+namespace api {
   void sendJson(const JsonDocument &doc, int code = 200) {
     String out;
     serializeJson(doc, out);
   
     server.send(code, "application/json", out);
   }
-}
-
-namespace api {
+  
   void handlePostLed() {
     if (server.method() != HTTP_POST) {
       server.send(405, "text/plain", "Method Not Allowed");
@@ -185,7 +161,7 @@ namespace api {
 
     doc["color"] = led::rgbToHex(ledBlinker.colorSolid);
 
-    json::sendJson(doc);
+    sendJson(doc);
   }
 
   void handleGetWifi() {
@@ -207,7 +183,7 @@ namespace api {
     doc["pass"] = netCfg.pass;
     doc["token"] = netCfg.token;
     
-    json::sendJson(doc);
+    sendJson(doc);
   }
 
   void handlePostWifi() {
@@ -286,7 +262,7 @@ void setPixel(LedRGB rgb) {
 
 
 void setup() {
-  change_state(START_SETUP);
+  state.change_to(State::START_SETUP);
   M5.begin(true, false, true);
   M5.dis.clear();
   ledBlinker.init(setPixel);
@@ -300,31 +276,31 @@ void setup() {
 
   if (!storage::hasCredentials()) {
     Serial.println("No credentials, entering provisioning mode");
-    change_state(State::PROVISIONING_MODE);
+    state.change_to(State::PROVISIONING_MODE);
   } else {
     Serial.println("Found credentials, entering operations mode");
     storage::loadNetCfg(netCfg);
     
     Serial.printf("SSID: %s, Pass: %s", netCfg.ssid.c_str(), netCfg.pass.c_str());
-    change_state(State::OPERATION_MODE);
+    state.change_to(State::OPERATION_MODE);
   }
 
-  switch (state) {
-  case State::PROVISIONING_MODE:
+  switch (state.state) {
+  case PROVISIONING_MODE:
     wifi_manager::init_ap_wifi();
     
     http_server::initAPServer();
     delay(100);
-    change_state(State::PM_CONNECT_WAIT);
+    state.change_to(State::PM_CONNECT_WAIT);
     ledBlinker.set_blink(COLOR_ORANGE, COLOR_BLACK);
     break;
-  case State::OPERATION_MODE: {
+  case OPERATION_MODE: {
     storage::loadNetCfg(netCfg);
     auto connected =
         wifi_manager::init_sta_wifi(netCfg.ssid, netCfg.pass, ledBlinker);    
     
     if (connected) {
-      change_state(State::OP_CONNECT_WAIT);
+      state.change_to(State::OP_CONNECT_WAIT);
       // init new server
     } else {
       storage::clearCredentials();
@@ -342,14 +318,13 @@ void setup() {
 
   Serial.println("[INFO]: M5 App Setup Done");
 }
-utils::Timer timer { 1000, millis() };
 
 void loop() {
   M5.update();
   server.handleClient();
   ledBlinker.tick();
   
-  switch (state) {
+  switch (state.state) {
   case PM_CONNECT_WAIT:
     if (timer.ready()) {
       Serial.println("One tick every 1 second");
