@@ -14,6 +14,7 @@
 #include "esp32-hal.h"
 #include "esp_wifi_types.h"
 #include "led_blinker.h"
+#include "utils.h"
 
 #define NET_CFG "netcfg"
 #define AP_WIFI_SSID "M5Stack_Atom"
@@ -419,37 +420,28 @@ void setup() {
 
   Serial.println("[INFO]: M5 App Setup Done");
 }
-
-u_long lastTime = millis();
-
+utils::Timer timer { 1000, millis() };
 
 void loop() {
-  u_long now = millis();
-  u_long dt = now - lastTime;
-  if (dt > 1000) {
-      lastTime = now;
-  }
-
   M5.update();
   server.handleClient();
   ledBlinker.tick();
   
   switch (state) {
   case PM_CONNECT_WAIT:
-    if (dt > 1000) {
+    if (timer.ready()) {
       Serial.println("One tick every 1 second");
     }
     break;
   case OP_CONNECT_WAIT:
-    if (dt > 1000) {
+    if (timer.ready()) {
       Serial.println("Wifi Connection was successful.");
     }
     break;
   default:
-    if (dt > 1000) {
+    if (timer.ready()) {
       Serial.println("DEFAUL loop.");
     }
-    
     break;
   }
   
