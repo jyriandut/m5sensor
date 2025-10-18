@@ -12,83 +12,15 @@
 #include "utils.h"
 #include "config.h"
 #include "wifi_manager.h"
+#include "storage.h"
 
-
-struct NetCfg {
-  String ssid;
-  String pass;
-  String token; 
-};
 
 WebServer server(80);
 Preferences prefs;
-LedBlinker ledBlinker;
-NetCfg netCfg {};
+LedBlinker led_blinker;
 utils::Timer timer{1000, millis()};
 utils::StateMachine state{State::NOOP};
-
-
-namespace storage {
-  bool saveNetCfg(const NetCfg& cfg) {
-    Preferences prefs;
-    if (!prefs.begin(NET_CFG, false)) {
-      Serial.printf("ERROR: Failed to open Preferences " NET_CFG);
-      return false;
-    }
-
-    prefs.putString("ssid",  cfg.ssid);
-    prefs.putString("pass",  cfg.pass);
-    prefs.putString("token", cfg.token);
-    prefs.end();
-    return true;
-  }
-
-  bool clearCredentials() {
-    Serial.printf("Deleting preferences: " NET_CFG);
-    Preferences prefs;
-    if (!prefs.begin(NET_CFG, true)) {
-      Serial.printf("ERROR: Couldn't load Preferences: " NET_CFG);
-      return false;
-    }
-    return prefs.clear();
-  }
-  
-  bool hasCredentials() {
-    Preferences prefs;
-    bool result = true;
-    if (!prefs.begin(NET_CFG, true)) {
-      Serial.printf("ERROR: Couldn't load Preferences: " NET_CFG);
-      result = false;
-    }
-    if (!prefs.isKey("ssid")) {
-      Serial.println("ssid key not found in preferences");
-      result = false;
-    }
-    else if (prefs.getString("ssid").equals(String())) {
-      Serial.println("ssid key value empty");
-      result = false;
-    }
-    prefs.end();
-    return result;
-  }
-  
-  bool loadNetCfg(NetCfg& cfg) {
-    Preferences prefs;
-
-    if (!prefs.begin(NET_CFG, false)) {
-      Serial.printf("ERROR: Couldn't load Preferences: " NET_CFG);
-      return false;
-    }
-
-    cfg.ssid = prefs.getString("ssid", "");
-    Serial.printf("prefs.getString ssid %s \n", cfg.ssid.c_str());
-    
-    cfg.pass  = prefs.getString("pass", "");
-    cfg.token = prefs.getString("token", "");
-    prefs.end();
-    return true;
-  }
-}
+storage::WifiCredentials wifi_creds;
 
 namespace led {
   
@@ -147,9 +79,9 @@ namespace api {
     }
 
     LedRGB rgb = led::hexToRgb(hex);
-    ledBlinker.set_solid(rgb);
+    led_blinker.set_solid(rgb);
     JsonDocument out;
-    out["color"] = led::rgbToHex(ledBlinker.colorSolid);
+    out["color"] = led::rgbToHex(led_blinker.colorSolid);
   
     String s;
     serializeJson(out, s);
@@ -159,7 +91,7 @@ namespace api {
   void handleGetLed() {
     JsonDocument doc;
 
-    doc["color"] = led::rgbToHex(ledBlinker.colorSolid);
+    doc["color"] = led::rgbToHex(led_blinker.colorSolid);
 
     sendJson(doc);
   }
@@ -178,10 +110,10 @@ namespace api {
       x["rssi"] = n.rssi;
     }
     
-    storage::loadNetCfg(netCfg);
-    doc["ssid"] = netCfg.ssid;
-    doc["pass"] = netCfg.pass;
-    doc["token"] = netCfg.token;
+    storage::load_wifi_credentials(wifi_creds);
+    doc["ssid"] = wifi_creds.ssid;
+    doc["pass"] = wifi_creds.pass;
+    doc["token"] = wifi_creds.token;
     
     sendJson(doc);
   }
@@ -216,12 +148,12 @@ namespace api {
       pass = "";
     }
 
-    netCfg.ssid = ssid;
-    netCfg.pass = pass;
+    wifi_creds.ssid = ssid;
+    wifi_creds.pass = pass;
     
-    storage::clearCredentials();
+    storage::clear_wifi_credentials();
 
-    if (!storage::saveNetCfg(netCfg)) {
+    if (!storage::save_wifi_credentials(wifi_creds)) {
       server.send(400, "text/plain", "Failed to save preferences, try again.");
       return;
     }
@@ -265,23 +197,23 @@ void setup() {
   state.change_to(State::START_SETUP);
   M5.begin(true, false, true);
   M5.dis.clear();
-  ledBlinker.init(setPixel);
+  led_blinker.init(setPixel);
 
-  ledBlinker.set_blink(COLOR_ORANGE,COLOR_BLACK);
+  led_blinker.set_blink(COLOR_ORANGE,COLOR_BLACK);
   
   if (!LittleFS.begin(true)) {
     Serial.println("[ERROR]: Error has occurred with serial filesystem");
     return;
   }
 
-  if (!storage::hasCredentials()) {
+  if (!storage::has_wifi_credentials()) {
     Serial.println("No credentials, entering provisioning mode");
     state.change_to(State::PROVISIONING_MODE);
   } else {
     Serial.println("Found credentials, entering operations mode");
-    storage::loadNetCfg(netCfg);
+    storage::load_wifi_credentials(wifi_creds);
     
-    Serial.printf("SSID: %s, Pass: %s", netCfg.ssid.c_str(), netCfg.pass.c_str());
+    Serial.printf("SSID: %s, Pass: %s", wifi_creds.ssid.c_str(), wifi_creds.pass.c_str());
     state.change_to(State::OPERATION_MODE);
   }
 
@@ -292,18 +224,18 @@ void setup() {
     http_server::initAPServer();
     delay(100);
     state.change_to(State::PM_CONNECT_WAIT);
-    ledBlinker.set_blink(COLOR_ORANGE, COLOR_BLACK);
+    led_blinker.set_blink(COLOR_ORANGE, COLOR_BLACK);
     break;
   case OPERATION_MODE: {
-    storage::loadNetCfg(netCfg);
+    storage::load_wifi_credentials(wifi_creds);
     auto connected =
-        wifi_manager::init_sta_wifi(netCfg.ssid, netCfg.pass, ledBlinker);    
+        wifi_manager::init_sta_wifi(wifi_creds.ssid, wifi_creds.pass, led_blinker);    
     
     if (connected) {
       state.change_to(State::OP_CONNECT_WAIT);
       // init new server
     } else {
-      storage::clearCredentials();
+      storage::clear_wifi_credentials();
       utils::system_restart();
     }
 
@@ -322,7 +254,7 @@ void setup() {
 void loop() {
   M5.update();
   server.handleClient();
-  ledBlinker.tick();
+  led_blinker.tick();
   
   switch (state.state) {
   case PM_CONNECT_WAIT:
