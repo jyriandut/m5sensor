@@ -67,7 +67,6 @@ ESP32 overload and stability test for web API performance analysis using browser
 **Dependencies**: 
 - M5Atom library
 - WiFi library (built-in)
-- HTTPClient library (built-in)
 
 **Access**:
 - **SSID**: M5Stack_Test

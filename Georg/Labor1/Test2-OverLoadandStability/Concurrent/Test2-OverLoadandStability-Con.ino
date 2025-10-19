@@ -1,64 +1,45 @@
 /*
- * ESP32 Overload and Stability Test for M5Stack Atom Lite
+ * ESP32 Overload and Stability Test for M5Stack Atom Lite (Concurrent Version)
  * 
- * Self-contained test that runs both web server and test client
+ * Browser-based HTTP stress testing with concurrent requests
  * Tests LED color change API under increasing load to find:
  * - Maximum stable command frequency
- * - Graceful degradation limits
+ * - System behavior under concurrent load
  * - Critical failure points
- * - Recovery time after overload
  * 
  * Hardware: M5Stack Atom Lite (WS2812B RGB LED on GPIO 27)
- * Serial Monitor: 115200 baud
  * 
- * Required Libraries: M5Atom, WiFi, HTTPClient
+ * Required Libraries: M5Atom, WiFi
  * 
  * Access Point: M5Stack_Test / 12345678
  * Default IP: 192.168.4.1
+ * Test Interface: http://192.168.4.1/test
  * 
- * Press the button to start the test sequence
+ * How to use:
+ * 1. Upload this code to M5 Atom Lite
+ * 2. Connect to WiFi: M5Stack_Test / 12345678
+ * 3. Open browser: http://192.168.4.1/test
+ * 4. Click "Start Test" and wait ~6 minutes
+ * 5. View color-coded results and throttling recommendations
  */
 
 #include <M5Atom.h>
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WiFiAP.h>
-#include <HTTPClient.h>
 
 // WiFi AP Configuration
 const char* ap_ssid     = "M5Stack_Test";
 const char* ap_password = "12345678";
-const char* serverIP    = "127.0.0.1"; // Use localhost for self-testing
 
 WiFiServer server(80);
 
 // Current LED color (0xRRGGBB)
 uint32_t currentColor = 0x00FF00; // Start with green
-uint32_t lastSetColor = 0x00FF00;
 
-// Test configuration
-const int testFrequencies[] = {10, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000};
-const int numFrequencies = 12;
-const int testDuration = 30000; // 30 seconds per frequency level
-
-// Test state
-bool testRunning = false;
+// Server state
 bool serverReady = false;
 
-// Test results structure
-struct TestResults {
-  int frequency;
-  int totalRequests;
-  int successfulRequests;
-  int failedRequests;
-  int droppedCommands;
-  float avgResponseTime;
-  float maxResponseTime;
-  float minResponseTime;
-};
-
-TestResults results[12]; // Store results for each frequency
-int currentTestIndex = 0;
 
 // --- Helper Functions ---
 
@@ -130,7 +111,15 @@ void sendTestPage(WiFiClient& client) {
   client.println("<div class='container'>");
   client.println("<h1>M5 Atom Overload Test</h1>");
   client.println("<p>This test will send HTTP requests at increasing frequencies to measure server performance.</p>");
+  client.println("<h3>Test Criteria</h3>");
+  client.println("<table style='font-size:14px'>");
+  client.println("<tr><th>Color</th><th>Criteria</th><th>Meaning</th></tr>");
+  client.println("<tr class='good'><td>🟢 Green</td><td>Success ≥95% AND Avg &lt;200ms</td><td><strong>Stable</strong> - Safe for production</td></tr>");
+  client.println("<tr class='warning'><td>🟡 Yellow</td><td>Success ≥80% AND Avg &lt;500ms</td><td><strong>Warning</strong> - Degraded performance</td></tr>");
+  client.println("<tr class='bad'><td>🔴 Red</td><td>Success &lt;80% OR Avg ≥500ms</td><td><strong>Failure</strong> - System overloaded</td></tr>");
+  client.println("</table>");
   client.println("<button id='startBtn' onclick='startTest()'>Start Test</button>");
+  client.println("<button id='stopBtn' onclick='stopTest()' disabled style='background:#dc3545'>Stop Test</button>");
   client.println("<button onclick='location.reload()'>Reset</button>");
   client.println("<div id='status'></div>");
   client.println("<div id='progress'></div>");
@@ -143,6 +132,7 @@ void sendTestPage(WiFiClient& client) {
   client.println("let results=[];");
   client.println("let currentTest=0;");
   client.println("let isRunning=false;");
+  client.println("let shouldStop=false;");
   
   client.println("function randomColor(){");
   client.println("const r=Math.floor(Math.random()*256).toString(16).padStart(2,'0');");
@@ -159,7 +149,20 @@ void sendTestPage(WiFiClient& client) {
   client.println("}catch(e){");
   client.println("return{success:false,time:performance.now()-start};}}");
   
+  client.println("async function testRecovery(){");
+  client.println("document.getElementById('progress').innerHTML='<div class=\\'progress\\'>Testing recovery...</div>';");
+  client.println("await new Promise(r=>setTimeout(r,10000));");
+  client.println("const recoveryStart=Date.now();");
+  client.println("let recovered=false;");
+  client.println("for(let i=0;i<10;i++){");
+  client.println("const result=await sendSetRequest(randomColor());");
+  client.println("if(result.success&&result.time<100){recovered=true;break;}");
+  client.println("await new Promise(r=>setTimeout(r,1000));}");
+  client.println("const recoveryTime=Date.now()-recoveryStart;");
+  client.println("return{recovered,recoveryTime};}");
+  
   client.println("async function runFrequencyTest(freq){");
+  client.println("if(shouldStop)return null;");
   client.println("document.getElementById('status').className='running';");
   client.println("document.getElementById('status').textContent=`Testing ${freq} cmd/s...`;");
   client.println("let total=0,success=0,failed=0,totalTime=0,maxTime=0,minTime=999999;");
@@ -167,6 +170,7 @@ void sendTestPage(WiFiClient& client) {
   client.println("const promises=[];");
   client.println("const targetRequests=freq*testDuration/1000;");
   client.println("for(let i=0;i<targetRequests;i++){");
+  client.println("if(shouldStop)break;");
   client.println("const color=randomColor();");
   client.println("const promise=sendSetRequest(color).then(result=>{");
   client.println("total++;");
@@ -183,26 +187,47 @@ void sendTestPage(WiFiClient& client) {
   client.println("return{freq,total,success,failed,");
   client.println("avgTime:success>0?totalTime/success:0,");
   client.println("maxTime:maxTime<999999?maxTime:0,");
-  client.println("minTime:minTime<999999?minTime:0};}");
+  client.println("minTime:minTime<999999?minTime:0,recoveryTime:null,recovered:null};");
+  
+  client.println("function stopTest(){");
+  client.println("shouldStop=true;");
+  client.println("document.getElementById('stopBtn').disabled=true;");
+  client.println("document.getElementById('status').className='complete';");
+  client.println("document.getElementById('status').textContent='⚠️ Test Stopped by User';");
+  client.println("displayResults();}");
   
   client.println("async function startTest(){");
   client.println("if(isRunning)return;");
-  client.println("isRunning=true;");
+  client.println("isRunning=true;shouldStop=false;");
   client.println("document.getElementById('startBtn').disabled=true;");
+  client.println("document.getElementById('stopBtn').disabled=false;");
   client.println("results=[];");
   client.println("for(let i=0;i<frequencies.length;i++){");
+  client.println("if(shouldStop)break;");
   client.println("const result=await runFrequencyTest(frequencies[i]);");
+  client.println("if(!result)break;");
   client.println("results.push(result);");
-  client.println("displayResults();}");
+  client.println("const successRate=(result.success/result.total*100);");
+  client.println("if(successRate<95||result.avgTime>200){");
+  client.println("const recovery=await testRecovery();");
+  client.println("result.recoveryTime=recovery.recoveryTime;");
+  client.println("result.recovered=recovery.recovered;");
+  client.println("if(!recovery.recovered){");
   client.println("document.getElementById('status').className='complete';");
-  client.println("document.getElementById('status').textContent='✓ Test Complete!';");
+  client.println("document.getElementById('status').textContent='⚠️ System did not recover - stopping test';");
+  client.println("break;}}");
+  client.println("displayResults();}");
+  client.println("if(!shouldStop){");
+  client.println("document.getElementById('status').className='complete';");
+  client.println("document.getElementById('status').textContent='✓ Test Complete!';}");
   client.println("document.getElementById('progress').innerHTML='';");
+  client.println("document.getElementById('stopBtn').disabled=true;");
   client.println("isRunning=false;}");
   
   client.println("function displayResults(){");
   client.println("let html='<h2>Results</h2><table><tr>';");
   client.println("html+='<th>Freq (cmd/s)</th><th>Total</th><th>Success</th><th>Failed</th>';");
-  client.println("html+='<th>Success %</th><th>Avg (ms)</th><th>Max (ms)</th></tr>';");
+  client.println("html+='<th>Success %</th><th>Avg (ms)</th><th>Max (ms)</th><th>Recovery</th></tr>';");
   client.println("let maxStable=0;");
   client.println("results.forEach(r=>{");
   client.println("const successRate=(r.success/r.total*100).toFixed(1);");
@@ -215,7 +240,12 @@ void sendTestPage(WiFiClient& client) {
   client.println("html+=`<td>${r.success}</td><td>${r.failed}</td>`;");
   client.println("html+=`<td>${successRate}%</td>`;");
   client.println("html+=`<td>${r.avgTime.toFixed(1)}</td>`;");
-  client.println("html+=`<td>${r.maxTime.toFixed(1)}</td></tr>`;});");
+  client.println("html+=`<td>${r.maxTime.toFixed(1)}</td>`;");
+  client.println("if(r.recoveryTime!==null){");
+  client.println("const recTime=(r.recoveryTime/1000).toFixed(1);");
+  client.println("html+=`<td>${r.recovered?'✅ '+recTime+'s':'❌ Failed'}</td>`;}");
+  client.println("else{html+=`<td>-</td>`;}");
+  client.println("html+=`</tr>`;});");
   client.println("html+='</table>';");
   client.println("html+=`<h3>Recommendation</h3>`;");
   client.println("html+=`<p><strong>Maximum Stable Frequency:</strong> ${maxStable} cmd/s</p>`;");
@@ -331,241 +361,6 @@ void handleClient() {
   client.stop();
 }
 
-// --- HTTP Client Test Functions ---
-
-// Send SET request and measure response time
-bool sendSetRequest(uint32_t color, float& responseTime) {
-  HTTPClient http;
-  String url = "http://" + String(serverIP) + "/set?color=%23" + colorToHex(color);
-  
-  unsigned long startTime = millis();
-  http.begin(url);
-  http.setTimeout(5000); // 5 second timeout
-  
-  int httpCode = http.GET();
-  unsigned long endTime = millis();
-  responseTime = endTime - startTime;
-  
-  http.end();
-  
-  return (httpCode == 200);
-}
-
-// Send GET request to verify current color
-bool sendGetRequest(uint32_t& retrievedColor) {
-  HTTPClient http;
-  String url = "http://" + String(serverIP) + "/get";
-  
-  http.begin(url);
-  http.setTimeout(5000);
-  
-  int httpCode = http.GET();
-  
-  if (httpCode == 200) {
-    String payload = http.getString();
-    // Parse JSON: {"color":"#RRGGBB"}
-    int colorStart = payload.indexOf("#") + 1;
-    if (colorStart > 0) {
-      String colorStr = payload.substring(colorStart, colorStart + 6);
-      http.end();
-      return parseHexColor(colorStr, retrievedColor);
-    }
-  }
-  
-  http.end();
-  return false;
-}
-
-// Run test at specific frequency
-void runFrequencyTest(int frequency, int duration) {
-  Serial.println("\n=================================");
-  Serial.print("Testing at ");
-  Serial.print(frequency);
-  Serial.println(" commands/second");
-  Serial.print("Duration: ");
-  Serial.print(duration / 1000);
-  Serial.println(" seconds");
-  Serial.println("=================================");
-  
-  int totalRequests = 0;
-  int successfulRequests = 0;
-  int failedRequests = 0;
-  float totalResponseTime = 0;
-  float maxResponse = 0;
-  float minResponse = 999999;
-  
-  unsigned long delayBetweenRequests = 1000 / frequency; // milliseconds
-  unsigned long startTime = millis();
-  unsigned long lastRequestTime = 0;
-  
-  while (millis() - startTime < duration) {
-    // Handle server requests
-    handleClient();
-    
-    // Check if it's time to send next request
-    if (millis() - lastRequestTime >= delayBetweenRequests) {
-      uint32_t testColor = randomColor();
-      float responseTime = 0;
-      
-      bool success = sendSetRequest(testColor, responseTime);
-      
-      totalRequests++;
-      if (success) {
-        successfulRequests++;
-        totalResponseTime += responseTime;
-        if (responseTime > maxResponse) maxResponse = responseTime;
-        if (responseTime < minResponse) minResponse = responseTime;
-        lastSetColor = testColor;
-        
-        // Print progress every 10 requests
-        if (totalRequests % 10 == 0) {
-          Serial.print(".");
-        }
-      } else {
-        failedRequests++;
-        Serial.print("X");
-      }
-      
-      lastRequestTime = millis();
-    }
-    
-    delay(1); // Small delay to prevent watchdog issues
-  }
-  
-  Serial.println("\n");
-  
-  // Verify with GET request
-  delay(500); // Wait a bit before verification
-  uint32_t retrievedColor = 0;
-  bool getSuccess = sendGetRequest(retrievedColor);
-  int droppedCommands = 0;
-  
-  if (getSuccess) {
-    if (retrievedColor != lastSetColor) {
-      droppedCommands = 1;
-      Serial.println("⚠ WARNING: Last SET color doesn't match GET color!");
-      Serial.print("  Expected: #");
-      Serial.println(colorToHex(lastSetColor));
-      Serial.print("  Got:      #");
-      Serial.println(colorToHex(retrievedColor));
-    } else {
-      Serial.println("✓ GET verification successful - no commands dropped");
-    }
-  } else {
-    Serial.println("✗ GET request failed!");
-  }
-  
-  // Store results
-  results[currentTestIndex].frequency = frequency;
-  results[currentTestIndex].totalRequests = totalRequests;
-  results[currentTestIndex].successfulRequests = successfulRequests;
-  results[currentTestIndex].failedRequests = failedRequests;
-  results[currentTestIndex].droppedCommands = droppedCommands;
-  results[currentTestIndex].avgResponseTime = (successfulRequests > 0) ? (totalResponseTime / successfulRequests) : 0;
-  results[currentTestIndex].maxResponseTime = maxResponse;
-  results[currentTestIndex].minResponseTime = (minResponse < 999999) ? minResponse : 0;
-  
-  // Print summary
-  Serial.println("\n--- Test Summary ---");
-  Serial.print("Total requests: ");
-  Serial.println(totalRequests);
-  Serial.print("Successful: ");
-  Serial.print(successfulRequests);
-  Serial.print(" (");
-  Serial.print((successfulRequests * 100.0) / totalRequests);
-  Serial.println("%)");
-  Serial.print("Failed: ");
-  Serial.println(failedRequests);
-  Serial.print("Avg response time: ");
-  Serial.print(results[currentTestIndex].avgResponseTime);
-  Serial.println(" ms");
-  Serial.print("Min response time: ");
-  Serial.print(results[currentTestIndex].minResponseTime);
-  Serial.println(" ms");
-  Serial.print("Max response time: ");
-  Serial.print(results[currentTestIndex].maxResponseTime);
-  Serial.println(" ms");
-  Serial.println("=================================\n");
-  
-  currentTestIndex++;
-}
-
-// Display final results
-void displayFinalResults() {
-  Serial.println("\n\n");
-  Serial.println("╔════════════════════════════════════════════════════════════╗");
-  Serial.println("║           OVERLOAD TEST - FINAL RESULTS                    ║");
-  Serial.println("╚════════════════════════════════════════════════════════════╝");
-  Serial.println();
-  
-  Serial.println("Freq  | Total | Success | Failed | Dropped | Avg(ms) | Max(ms)");
-  Serial.println("------|-------|---------|--------|---------|---------|--------");
-  
-  int maxStableFreq = 0;
-  int gracefulDegradationFreq = 0;
-  int criticalFailureFreq = 0;
-  
-  for (int i = 0; i < currentTestIndex; i++) {
-    Serial.printf("%4d  | %5d | %7d | %6d | %7d | %7.1f | %7.1f\n",
-                  results[i].frequency,
-                  results[i].totalRequests,
-                  results[i].successfulRequests,
-                  results[i].failedRequests,
-                  results[i].droppedCommands,
-                  results[i].avgResponseTime,
-                  results[i].maxResponseTime);
-    
-    // Determine thresholds
-    float successRate = (results[i].successfulRequests * 100.0) / results[i].totalRequests;
-    
-    if (successRate >= 95 && results[i].avgResponseTime < 200 && results[i].droppedCommands == 0) {
-      maxStableFreq = results[i].frequency;
-    }
-    
-    if (successRate >= 80 && results[i].avgResponseTime < 500 && gracefulDegradationFreq == 0) {
-      gracefulDegradationFreq = results[i].frequency;
-    }
-    
-    if ((successRate < 50 || results[i].droppedCommands > 0) && criticalFailureFreq == 0) {
-      criticalFailureFreq = results[i].frequency;
-    }
-  }
-  
-  Serial.println();
-  Serial.println("═══════════════════════════════════════════════════════════");
-  Serial.println("                    RECOMMENDATIONS                        ");
-  Serial.println("═══════════════════════════════════════════════════════════");
-  Serial.print("✓ Maximum Stable Frequency: ");
-  Serial.print(maxStableFreq);
-  Serial.println(" cmd/s");
-  Serial.println("  (>95% success, <200ms avg, no drops)");
-  Serial.println();
-  
-  if (gracefulDegradationFreq > maxStableFreq) {
-    Serial.print("⚠ Graceful Degradation Starts: ");
-    Serial.print(gracefulDegradationFreq);
-    Serial.println(" cmd/s");
-    Serial.println("  (>80% success, <500ms avg)");
-    Serial.println();
-  }
-  
-  if (criticalFailureFreq > 0) {
-    Serial.print("✗ Critical Failure Point: ");
-    Serial.print(criticalFailureFreq);
-    Serial.println(" cmd/s");
-    Serial.println("  (<50% success or commands dropped)");
-    Serial.println();
-  }
-  
-  Serial.println("═══════════════════════════════════════════════════════════");
-  Serial.println("THROTTLING RECOMMENDATION FOR WEB INTERFACE:");
-  Serial.print("Set maximum rate to ");
-  Serial.print(maxStableFreq);
-  Serial.println(" commands/second");
-  Serial.println("═══════════════════════════════════════════════════════════");
-  Serial.println();
-}
-
 // --- Setup and Loop ---
 
 void setup() {
@@ -605,7 +400,7 @@ void setup() {
   Serial.println("✓ Server ready!");
   Serial.println();
   Serial.println("═══════════════════════════════════════════════════════════");
-  Serial.println("Press the button to start the overload test");
+  Serial.println("Open browser: http://192.168.4.1/test");
   Serial.println("═══════════════════════════════════════════════════════════");
   Serial.println();
   
@@ -622,51 +417,8 @@ void setup() {
 void loop() {
   M5.update();
   
-  // Handle server requests when not testing
-  if (!testRunning) {
-    handleClient();
-    
-    // Check for button press to start test
-    if (M5.Btn.wasPressed()) {
-      testRunning = true;
-      currentTestIndex = 0;
-      
-      Serial.println("\n\n");
-      Serial.println("╔════════════════════════════════════════════════════════════╗");
-      Serial.println("║              STARTING OVERLOAD TEST                        ║");
-      Serial.println("╚════════════════════════════════════════════════════════════╝");
-      Serial.println();
-      Serial.println("This will test the following frequencies:");
-      for (int i = 0; i < numFrequencies; i++) {
-        Serial.print("  ");
-        Serial.print(testFrequencies[i]);
-        Serial.println(" cmd/s");
-      }
-      Serial.println();
-      delay(2000);
-      
-      // Run all frequency tests
-      for (int i = 0; i < numFrequencies; i++) {
-        runFrequencyTest(testFrequencies[i], testDuration);
-        delay(2000); // Pause between tests
-      }
-      
-      // Display final results
-      displayFinalResults();
-      
-      testRunning = false;
-      Serial.println("\n✓ Test complete! Press button to run again.");
-      
-      // Blink LED to indicate completion
-      for (int i = 0; i < 5; i++) {
-        M5.dis.drawpix(0, CRGB::Blue);
-        delay(200);
-        M5.dis.drawpix(0, CRGB::Black);
-        delay(200);
-      }
-      applyColor(currentColor);
-    }
-  }
+  // Handle server requests
+  handleClient();
   
   delay(10);
 }

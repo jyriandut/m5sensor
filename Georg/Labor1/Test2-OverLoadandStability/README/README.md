@@ -107,110 +107,19 @@ This test will help determine:
 
 ---
 
-## 5. Implementation Options for Overload and Stability Test
-
-Based on the requirements and reference files, here are the approaches we can take:
-
-### **Option 1: Self-Contained Test (Recommended)**
-**M5 Atom Lite tests itself without external dependencies**
-
-**How it works:**
-- The M5 Atom runs both the **web server** (from `WebServer_WifiSetup.ino`) AND the **test client** code
-- Uses a timer/loop to generate HTTP requests internally to itself (localhost/127.0.0.1)
-- Measures response times, tracks dropped commands, logs results via Serial
-
-**Pros:**
-- ✅ No external computer needed
-- ✅ Self-contained, portable test
-- ✅ Similar structure to `Test1-LedColorChange.ino` (user-friendly)
-- ✅ Easy to run and repeat
-
-**Cons:**
-- ❌ Testing the device with itself may not reflect real-world network conditions
-- ❌ Limited by single-core processing (server + client compete for resources)
-
----
-
-### **Option 2: Two M5 Devices (Client-Server)**
-**One M5 runs the server, another runs the test client**
-
-**How it works:**
-- **Device 1:** Runs the web server (modified `WebServer_WifiSetup.ino`)
-- **Device 2:** Runs the test client that sends HTTP requests to Device 1's IP
-- Client measures response times and logs results
-
-**Pros:**
-- ✅ More realistic network testing
-- ✅ Separates server and client workloads
-- ✅ Better stress testing
-
-**Cons:**
-- ❌ Requires 2 M5 Atom devices
-- ❌ More complex setup
-
----
-
-### **Option 3: Python Script on Computer**
-**External Python script sends requests to M5 Atom**
-
-**How it works:**
-- M5 Atom runs the web server
-- Python script on your computer sends HTTP requests at varying frequencies
-- Script logs response times, dropped commands, etc.
-
-**Pros:**
-- ✅ Most realistic real-world scenario
-- ✅ Powerful logging and analysis capabilities
-- ✅ Easy to adjust test parameters
-
-**Cons:**
-- ❌ Requires Python setup on computer
-- ❌ Not self-contained in Arduino IDE
-- ❌ You mentioned preferring `.ino` files
-
----
-
-### **Option 4: Hybrid Approach**
-**M5 Atom runs server + basic client, with optional external monitoring**
-
-**How it works:**
-- M5 Atom runs web server and internal test client
-- Optionally, you can also monitor via external tools (browser, Python script)
-- Best of both worlds
-
-**Pros:**
-- ✅ Flexible
-- ✅ Can run standalone or with external monitoring
-- ✅ Good for iterative testing
-
-**Cons:**
-- ❌ More complex code
-
----
-
-### **Recommended Implementation: Option 1**
-
-**Rationale:**
-1. Matches the `Test1-LedColorChange.ino` pattern (interactive, serial-based)
-2. Uses Arduino IDE and `.ino` files exclusively
-3. Easy to run, repeat, and share
-4. For M5 Atom Lite, the goal is to find practical limits for web interface throttling
-
-**Implementation Plan:**
-1. **Base code:** Use `WebServer_WifiSetup.ino` as the web server foundation
-2. **Add GET endpoint:** Implement `/get` to return current LED color
-3. **Add test mode:** When button is pressed (or serial command), enter test mode:
-   - Automatically send SET requests at increasing frequencies
-   - Measure response times
-   - Verify with GET requests
-   - Log results to Serial Monitor
-4. **User interaction:** Similar to Test1, ask user to confirm observations at each load level
-
----
-
-## 6. Final Implementation: Browser-Based Testing
+## 5. Final Implementation: Browser-Based Testing
 
 We implemented **browser-based HTTP testing** using JavaScript. The M5 Atom runs a web server with a `/test` endpoint that provides an interactive testing interface.
+
+### **Why Browser-Based Testing?**
+
+After exploring various approaches (self-contained ESP32 testing, Python scripts, etc.), we chose browser-based testing because:
+
+- ✅ **Real HTTP conditions** - Tests actual network stack and WiFi performance
+- ✅ **No additional hardware** - Just need a phone or computer with a browser
+- ✅ **Easy to use** - Click a button, wait, view results
+- ✅ **Visual feedback** - Color-coded results table
+- ✅ **Flexible** - Can test from any device on the network
 
 ### **Two Testing Approaches Available**
 
@@ -218,7 +127,7 @@ We have implemented **two versions** of the test to demonstrate different testin
 
 ---
 
-## 7. Test Approach Comparison
+## 6. Test Approach Comparison
 
 ### **Approach 1: Sequential with Delays** 📁 `Sequential/`
 
@@ -307,7 +216,7 @@ await Promise.all(promises);  // Wait for all to complete
 
 ---
 
-## 8. Key Differences Summary
+## 7. Key Differences Summary
 
 ![Key Differences](../img/KeyDifferencesSummary.PNG)
 
@@ -345,7 +254,7 @@ The concurrent test reveals the **real capacity limits**.
 
 ---
 
-## 9. Implementation Details
+## 8. Implementation Details
 
 ### **Common Features (Both Versions)**
 
@@ -374,7 +283,7 @@ The concurrent test reveals the **real capacity limits**.
 
 ---
 
-## 10. How to Use
+## 9. How to Use
 
 ### **Setup:**
 1. **Choose version**: Sequential or Concurrent
@@ -398,7 +307,7 @@ The concurrent test reveals the **real capacity limits**.
 
 ---
 
-## 11. Files Structure
+## 10. Files Structure
 
 ```
 Test2-OverLoadandStability/
@@ -418,7 +327,7 @@ Test2-OverLoadandStability/
 
 ---
 
-## 12. Recommendations
+## 11. Recommendations
 
 ### **For Learning/Demonstration:**
 - Use **both versions** to understand the difference
