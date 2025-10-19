@@ -6,6 +6,7 @@
  * - Maximum stable command frequency
  * - System behavior under concurrent load
  * - Critical failure points
+ * - Soft recovery
  * 
  * Hardware: M5Stack Atom Lite (WS2812B RGB LED on GPIO 27)
  * 
@@ -150,7 +151,7 @@ void sendTestPage(WiFiClient& client) {
   client.println("return{success:false,time:performance.now()-start};}}");
   
   client.println("async function testRecovery(){");
-  client.println("document.getElementById('progress').innerHTML='<div class=\\'progress\\'>Testing recovery...</div>';");
+  client.println("document.getElementById('progress').innerHTML='<div class=\"progress\">Testing recovery...</div>';");
   client.println("await new Promise(r=>setTimeout(r,10000));");
   client.println("const recoveryStart=Date.now();");
   client.println("let recovered=false;");
@@ -187,7 +188,7 @@ void sendTestPage(WiFiClient& client) {
   client.println("return{freq,total,success,failed,");
   client.println("avgTime:success>0?totalTime/success:0,");
   client.println("maxTime:maxTime<999999?maxTime:0,");
-  client.println("minTime:minTime<999999?minTime:0,recoveryTime:null,recovered:null};");
+  client.println("minTime:minTime<999999?minTime:0,recoveryTime:null,recovered:null};}");
   
   client.println("function stopTest(){");
   client.println("shouldStop=true;");
