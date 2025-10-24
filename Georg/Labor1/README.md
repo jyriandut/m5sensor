@@ -184,7 +184,76 @@ WiFi Access Point with LED control and real-time pressure sensor monitoring web 
 
 ---
 
-### 5. **WebServer**
+### 5. **Pressure Calibration (Jupyter Lab)**
+MPX5700AP pressure sensor calibration and analysis using Jupyter Lab for scientific data analysis.
+
+**Purpose**: Perform comprehensive calibration of the digital pressure system, including resolution determination, linearity testing, and noise analysis.
+
+**Features**:
+- **Serial data collection** from ESP32 via Python
+- **ADC-to-Pascal calibration** using MPX5700AP transfer function
+- **Linear regression analysis** with R² calculation
+- **Residual analysis** for error detection
+- **Noise analysis** at constant pressure
+- **Effective resolution calculation** (ENOB)
+- **Professional visualizations** with matplotlib/seaborn
+- **Automated report generation**
+- **CSV export** for documentation
+
+**Hardware**: 
+- M5Stack Atom Lite
+- MPX5700AP Pressure Sensor connected to GPIO 32
+- Syringe for pressure generation (1ml, 5ml, 9ml volumes)
+
+**Software Dependencies**: 
+- Python 3.x
+- Jupyter Lab
+- numpy, pandas, matplotlib, seaborn
+- scipy (for regression analysis)
+- pyserial (for ESP32 communication)
+
+**Analysis Methods**:
+- **Calibration**: MPX5700AP transfer function (ADC → kPa)
+- **Linearity Test**: Linear regression with residual analysis
+- **Resolution**: ENOB calculation via SNR and peak-to-peak noise
+- **Noise Analysis**: Standard deviation and peak-to-peak at constant pressure
+
+**Experiment Protocol**:
+1. Collect 10 ADC readings at 1ml syringe volume (low pressure)
+2. Collect 10 ADC readings at 5ml syringe volume (medium pressure)
+3. Collect 10 ADC readings at 9ml syringe volume (high pressure)
+4. Total: 30 measurements for comprehensive analysis
+
+**Usage**:
+1. Install Python dependencies: `pip install numpy pandas matplotlib seaborn scipy pyserial jupyter`
+2. Upload `pressure_data_logger.ino` to M5 Atom Lite
+3. Connect sensor to GPIO 32
+4. Start Jupyter Lab: `jupyter lab`
+5. Open `pressure_calibration.ipynb`
+6. Update COM port in notebook (e.g., 'COM3')
+7. Run cells sequentially to collect and analyze data
+8. View visualizations and export results
+
+**Output**:
+- **Calibration equation**: Linear relationship between volume and pressure
+- **R² value**: Linearity quality metric
+- **ENOB**: Effective number of bits (noise-limited resolution)
+- **Pressure resolution**: ±X.XX kPa measurement precision
+- **CSV files**: Raw data and summary statistics
+- **Plots**: Linearity, residuals, noise analysis
+
+**Files**:
+- `jupiter/pressure_calibration.ipynb` - Main Jupyter notebook with analysis
+- `jupiter/pressure_data_logger/pressure_data_logger.ino` - Arduino data logger
+- `jupiter/README.md` - Detailed methodology and theory
+- `jupiter/pressure_calibration_data.csv` - Generated measurement data
+- `jupiter/calibration_summary.csv` - Generated summary statistics
+
+**Use Case**: Scientific sensor calibration, measurement system validation, lab coursework, understanding ADC limitations and noise characteristics.
+
+---
+
+### 6. **WebServer**
 WiFi Access Point with LED color control web interface (Simple Version).
 
 **Purpose**: Create a WiFi hotspot on M5 Atom Lite with a web-based LED color picker and WiFi configuration storage.
