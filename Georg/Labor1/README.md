@@ -123,7 +123,68 @@ Analog pressure sensor reading and monitoring.
 
 ---
 
-### 4. **WebServer**
+### 4. **WebSitePressure**
+WiFi Access Point with LED control and real-time pressure sensor monitoring web interface.
+
+**Purpose**: Create a WiFi hotspot with web-based LED color picker and live pressure sensor data display from MPX5700AP sensor.
+
+**Features**:
+- **WiFi Access Point mode** (no router needed)
+- **LED color picker** with live preview
+- **Real-time pressure monitoring** with auto-refresh (2 Hz)
+- **MPX5700AP sensor support** (15-700 kPa range)
+- **Separate pages** for control panel, pressure monitor, and WiFi settings
+- **JSON API endpoint** for pressure data
+- **Secure WiFi configuration** with validation
+- **Flash memory storage** for WiFi credentials
+- **Professional UI** with modern styling
+
+**Hardware**: 
+- M5Stack Atom Lite (WS2812B RGB LED on GPIO 27)
+- MPX5700AP Pressure Sensor connected to GPIO 32
+
+**Dependencies**: 
+- M5Atom library
+- WiFi library (built-in)
+- Preferences library (built-in)
+
+**Access**:
+- **SSID**: M5Stack_Ap
+- **Password**: 66666666
+- **URL**: http://192.168.4.1
+
+**Endpoints**:
+- `/` - Main control panel (color picker + navigation)
+- `/set?value=%23RRGGBB` - Set LED color
+- `/pressure` - Real-time pressure sensor monitoring page
+- `/getpressure` - JSON API endpoint for current pressure reading
+- `/wifisettings` - WiFi configuration page
+- `/savewifi?ssid=...&pass=...` - Save WiFi credentials with validation
+
+**Usage**:
+1. Connect MPX5700AP sensor to GPIO 32
+2. Upload `WebSitePressure.ino` to M5 Atom Lite
+3. Connect to WiFi: **M5Stack_Ap** / **66666666**
+4. Open browser: **http://192.168.4.1**
+5. Use color picker to change LED
+6. Click "📊 View Pressure Sensor Data" for live monitoring
+7. Click "⚙️ Configure WiFi Settings" to save credentials
+
+**Pressure Sensor Details**:
+- **Sensor**: MPX5700AP
+- **Range**: 15-700 kPa
+- **Output**: 0.2V-4.7V (analog)
+- **Update Rate**: 2 Hz (500ms)
+- **Display**: kPa, raw ADC value, voltage
+
+**Files**:
+- `WebSitePressure/WebSitePressure.ino` - Main web server with pressure monitoring
+
+**Use Case**: IoT pressure monitoring, remote sensor access, lab experiments with real-time data visualization.
+
+---
+
+### 5. **WebServer**
 WiFi Access Point with LED color control web interface (Simple Version).
 
 **Purpose**: Create a WiFi hotspot on M5 Atom Lite with a web-based LED color picker and WiFi configuration storage.
@@ -164,7 +225,7 @@ WiFi Access Point with LED color control web interface (Simple Version).
 
 ---
 
-### 5. **WebServer_WifiSetup**
+### 7. **WebServer_WifiSetup**
 WiFi Access Point with LED color control and secure configuration (Advanced Version).
 
 **Purpose**: Professional web interface with secure WiFi configuration, password validation, and better UX.
@@ -209,7 +270,7 @@ WiFi Access Point with LED color control and secure configuration (Advanced Vers
 
 ---
 
-### 6. **Qr-code**
+### 8. **Qr-code**
 WiFi QR code generator for easy M5Stack connection.
 
 **Purpose**: Generate QR codes for automatic WiFi connection and web interface access - no manual typing needed!
