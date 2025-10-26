@@ -1,23 +1,55 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="color-scheme" content="light">
-    
-    <link rel="stylesheet" href="pico.lime.min.css">
-    <script src="alpine.min.js" defer></script>
-    <script src="app.js"></script>
-    <title>M5 Atom: Pressure sensor interface</title>
-  </head>
-  <body>
-    <main class="container" x-data="ledData">
-      <header>
-      </header>
-      <article x-data="wifiSettings">
-        <h1>Server Running</h1>
-      </article>
-    </main>
-  </body>
-</html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <link rel="stylesheet" href="pico.lime.min.css" />
+  <script src="chart.umd.min.js" defer></script>
+  <script src="alpine.min.js" defer></script>
+  <script src="main.js"></script>
+  <title>M5 Atom: Pressure sensor interface</title>
+  <style>
+    /* Make the chart nicely visible */
+    #chartWrap { height: 280px; }
+  </style>
+</head>
+<body>
+  <main class="container" x-data="pressure" x-init="initChart()">
+    <header class="grid">
+      <h1>Live Pressure</h1>
+      <div>
+        <button @click="toggle()"
+                :aria-busy="running"
+                x-text="running ? 'Pause' : 'Start'"></button>
+        <button class="secondary" @click="clearData()">Clear</button>
+        <label style="margin-left: .75rem;">
+          Rate:
+          <select x-model.number="intervalMs" @change="restartIfRunning()">
+            <option :value="1000">1 s</option>
+            <option :value="500">0.5 s</option>
+            <option :value="200">0.2 s</option>
+            <option :value="100">0.1 s</option>
+          </select>
+        </label>
+        <label style="margin-left: .75rem;">
+          Window:
+          <select x-model.number="maxPoints">
+            <option :value="60">60 pts</option>
+            <option :value="120">120 pts</option>
+            <option :value="240">240 pts</option>
+          </select>
+        </label>
+      </div>
+    </header>
 
+    <section id="chartWrap">
+      <canvas x-ref="chart"></canvas>
+    </section>
+
+    <footer>
+      <small>Last value: <strong x-text="lastValue.toFixed(2)"></strong> kPa</small>
+    </footer>
+  </main>
+</body>
+</html>

@@ -18,11 +18,13 @@ namespace storage {
   bool clear_wifi_credentials() {
     Serial.printf("Deleting preferences: " NET_CFG);
     Preferences prefs;
-    if (!prefs.begin(NET_CFG, true)) {
+    if (!prefs.begin(NET_CFG, false)) {
       Serial.printf("ERROR: Couldn't load Preferences: " NET_CFG);
       return false;
     }
-    return prefs.clear();
+    bool cleared = prefs.clear();
+    prefs.end();
+    return cleared;
   }
 
   bool has_wifi_credentials() {

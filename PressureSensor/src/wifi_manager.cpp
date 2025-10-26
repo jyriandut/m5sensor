@@ -13,22 +13,29 @@ namespace wifi_manager {
   
   void scan_wifi_networks(std::vector<NetworkData> &networks) {
     Serial.println("Scanning WiFi networks");
-    int n = WiFi.scanNetworks();
-    Serial.println("Scan done");
 
-    if (n == 0) {
-      Serial.println("No networks found");
-    } else {
-      Serial.print(n);
-      Serial.println(" networks found");
-      for (int i = 0; i < n; ++i) {
-        const NetworkData n = {
-          WiFi.SSID(i),
-          WiFi.RSSI(i),
-          WiFi.encryptionType(i)
-        };
-        
-        networks.push_back(n);
+    int n = WiFi.scanComplete();
+    if (n == -2) {
+      WiFi.scanNetworks(true);
+    } else if (n) {
+      if (n == 0) {
+        Serial.println("No networks found");
+      } else {
+        Serial.print(n);
+        Serial.println(" networks found");
+        for (int i = 0; i < n; ++i) {
+          const NetworkData n = {
+            WiFi.SSID(i),
+            WiFi.RSSI(i),
+            WiFi.encryptionType(i)
+          };
+          
+          networks.push_back(n);
+        }
+        WiFi.scanDelete();
+        if(WiFi.scanComplete() == -2){
+          WiFi.scanNetworks(true);
+        }
       }
     }
   }
@@ -42,10 +49,11 @@ namespace wifi_manager {
 
     WiFi.begin(ssid, password);
     Serial.printf("Connecting to WiFi network %s\n", ssid.c_str());
-    
+
+    int totalAttempts = 500 * 2 * 20;
     int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 40) {
-      Serial.printf("Connecting... %u\n", WiFi.status());
+    while (WiFi.status() != WL_CONNECTED && attempts <= totalAttempts ) {
+      Serial.printf("Connecting... %u; attempt nr %d of %d \n", WiFi.status(), attempts, totalAttempts);
       delay(500);
       ledBlinker.tick();
       attempts++;
