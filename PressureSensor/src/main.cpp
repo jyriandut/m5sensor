@@ -3,6 +3,7 @@
 #include <ArduinoJson.h>
 #include <WebServer.h>
 #include <LittleFS.h>
+#include <ModbusTCP.h>
 #include <cstdint>
 #include <sys/types.h>
 #include <vector>
@@ -13,7 +14,16 @@
 #include "config.h"
 #include "wifi_manager.h"
 #include "storage.h"
+#include "pressure.h"
 
+
+// --- UR robot Modbus-TCP server ---
+IPAddress SERVER_IP(192,168,10,21);
+const uint16_t SERVER_PORT = 502;   // Modbus TCP default
+const uint8_t  UNIT_ID     = 1;     // UR usually ignores, but 1 is fine
+
+ModbusTCP mb;            // client
+uint16_t hregs[4] = {0}; // example read buffer
 
 WebServer server(80);
 Preferences prefs;
@@ -185,6 +195,21 @@ namespace http_server {
   
     server.begin();
   }
+
+  void initClientServer() {
+    server.serveStatic("/", LittleFS, "/main.html");
+    server.serveStatic("/app.js", LittleFS, "/app.js");
+    server.serveStatic("/pico.lime.min.css", LittleFS, "/pico.lime.min.css");
+    server.serveStatic("/alpine.min.js", LittleFS, "/alpine.min.js");
+
+    server.on("/api/wifi", HTTP_POST, api::handlePostWifi);
+
+    server.onNotFound([]() {
+      server.send(404, "text/plain", "Not Found");
+    });
+  
+    server.begin();
+  }
   
 }
 
@@ -233,6 +258,12 @@ void setup() {
     
     if (connected) {
       state.change_to(State::OP_CONNECT_WAIT);
+      http_server::initClientServer();
+      pressure::initPressureReader();
+      mb.server();
+      mb.addHreg(0, 0, 1);
+      mb.connect(SERVER_IP, SERVER_PORT);
+      Serial.println("Modbus TCP client ready");
       // init new server
     } else {
       storage::clear_wifi_credentials();
@@ -251,6 +282,13 @@ void setup() {
   Serial.println("[INFO]: M5 App Setup Done");
 }
 
+static inline uint16_t scalePressureToWord(float pressure_bar) {
+  int32_t scaled = lroundf(pressure_bar * 100.0f); // e.g., 1.23 bar -> 123
+  if (scaled < -32768) scaled = -32768;
+  if (scaled >  32767) scaled =  32767;
+  return (uint16_t)(int16_t)scaled; // two's complement
+}
+
 void loop() {
   M5.update();
   server.handleClient();
@@ -263,9 +301,27 @@ void loop() {
     }
     break;
   case OP_CONNECT_WAIT:
+    mb.task();
     if (timer.ready()) {
+      Serial.println(WiFi.localIP());
+      // if (!mb.isConnected(SERVER_IP)) {
+      //   Serial.println("Reconnecting…");
+      //   mb.connect(SERVER_IP, SERVER_PORT);
+        
+      //   return;
+      // }
       Serial.println("Wifi Connection was successful.");
     }
+
+    if (M5.Btn.wasPressed()) {
+      float pressure_bar = 1.23f;
+      Serial.printf("Button pressed. Sending pressure: %.2f bar\n",
+                    pressure_bar);
+      float pressure_read = pressure::getPressure();
+      uint16_t word = scalePressureToWord(pressure_read);
+      mb.Hreg(0, word);
+    }
+    
     break;
   default:
     if (timer.ready()) {
