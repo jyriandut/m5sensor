@@ -15,7 +15,7 @@
 #include "pressure.h"
 #include "http_server.h"
 
-#define ENABLE_MODBUS
+//#define ENABLE_MODBUS
 
 #ifdef ENABLE_MODBUS
 IPAddress SERVER_IP(192,168,10,21);
@@ -119,7 +119,9 @@ void loop() {
     }
     break;
   case OP_CONNECT_WAIT:
+#ifdef ENABLE_MODBUS
     mb.task();
+#endif
     if (timer.ready()) {
       Serial.println(WiFi.localIP());
 #ifdef ENABLE_MODBUS
@@ -129,21 +131,20 @@ void loop() {
         
         return;
       }
+      if (M5.Btn.wasPressed()) {
+        float pressure_read = pressure::getPressure();
+        uint16_t res = static_cast<uint16_t>(std::round(pressure_read));
+        mb.Hreg(0, res);
+      }
 #endif
     }
     if (pressureTimer.ready()) {
       float pressure_read = pressure::getPressure();
-      String message = String(pressure_read);
+      auto message = String(pressure_read);
+      // here we send the data to the websocket. On the other hand, we need to connect to the same socket
       ws.textAll(message);
     }
-      // using bus to send message to robot hand
-#ifdef ENABLE_MODBUS
-    if (M5.Btn.wasPressed()) {
-      float pressure_read = pressure::getPressure();
-      uint16_t res = static_cast<uint16_t>(std::round(pressure_read));
-      mb.Hreg(0, res);
-    }
-#endif
+
     break;
   default:
     if (timer.ready()) {

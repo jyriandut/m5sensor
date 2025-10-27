@@ -56,9 +56,9 @@ document.addEventListener('alpine:init', () => {
         async init() {
             try {
                 this.wifiBusy = true;
-                const wifi = await fetch('/api/wifi');
-                if (wifi.ok) {
-                    const data = await wifi.json();
+                const data = await this.fetchWifiSettings();
+                console.log("Data ", data);
+                if (data['networks']) {
                     this.credentials = {
                         ssid: data.ssid,
                         pass: data.pass,
@@ -66,10 +66,28 @@ document.addEventListener('alpine:init', () => {
                     };
                     this.networks = data.networks;
                 }
-            } catch (_) {
+                this.wifiBusy = false;
+            } catch (err) {
+                console.error("failed to fetch wifi settings", err);
             } finally {
                 this.wifiBusy = false;
             }
+        },
+        async fetchWifiSettings() {
+            let res = await fetch('/api/wifi');
+            let content = await res.json();
+            keepPolling = true;
+            while(keepPolling) {
+                console.log("Waiting for 1 second");
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                res = await fetch('/api/wifi');
+                content = await res.json();
+                if (content["networks"].length > 0) {
+                    keepPolling = false;
+                }
+            }
+            console.log("Fetched content ", content);
+            return content;            
         },
         async saveWifiSettings() {
             this.wifiBusy = true;

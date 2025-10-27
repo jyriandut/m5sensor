@@ -14,41 +14,18 @@
     #chartWrap { height: 280px; }
   </style>
 </head>
-<body>
-  <main class="container" x-data="pressure" x-init="initChart()">
+<body data-theme="light">
+  <main class="container" x-data="pressure" x-init="init()">
     <header class="grid">
       <h1>Live Pressure</h1>
-      <div>
-        <button @click="toggle()"
-                :aria-busy="running"
-                x-text="running ? 'Pause' : 'Start'"></button>
-        <button class="secondary" @click="clearData()">Clear</button>
-        <label style="margin-left: .75rem;">
-          Rate:
-          <select x-model.number="intervalMs" @change="restartIfRunning()">
-            <option :value="1000">1 s</option>
-            <option :value="500">0.5 s</option>
-            <option :value="200">0.2 s</option>
-            <option :value="100">0.1 s</option>
-          </select>
-        </label>
-        <label style="margin-left: .75rem;">
-          Window:
-          <select x-model.number="maxPoints">
-            <option :value="60">60 pts</option>
-            <option :value="120">120 pts</option>
-            <option :value="240">240 pts</option>
-          </select>
-        </label>
-      </div>
     </header>
 
-    <section id="chartWrap">
-      <canvas x-ref="chart"></canvas>
+    <section id="chartWrap" style="height:280px">
+      <canvas x-ref="chart" width="800" height="280"></canvas>
     </section>
 
     <footer>
-      <small>Last value: <strong x-text="lastValue.toFixed(2)"></strong> kPa</small>
+      <small>Last value: <strong x-text="dataPoints.at(-1) ?? '—'"></strong> kPa</small>
     </footer>
   </main>
 </body>

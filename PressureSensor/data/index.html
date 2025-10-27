@@ -16,7 +16,7 @@
         <h1 x-data="{ message: 'M5 Configurator' }" x-text="message"></h1>
       </header>
       <article>
-        <header>
+        <header>bm
           <h3>Select new color</h3>
         </header>
         <div class="grid">
@@ -41,7 +41,7 @@
           <fieldset>
             <label>
               Available WiFi networks:
-              <select aria-label="Select your network" x-model="selectedNetwork">
+              <select aria-label="Select your network" x-model="selectedNetwork" @change="credentials.ssid = selectedNetwork" :aria-busy="wifiBusy">
                 <template x-for="network in networks" :key="network">
                   <option :value="network.ssid" x-text="network.ssid"></option>
                 </template>

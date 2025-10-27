@@ -1,13 +1,11 @@
 #include "pressure.h"
+#include <cstdint>
 
-
-// Pin configuration
 const int PRESSURE_PIN = 33;  // G33 analog input
 
-// Voltage divider configuration
-const float R1 = 970.0;      // 1kΩ top resistor
-const float R2 = 2560.0;      // 2.2kΩ bottom resistor
-const float DIVIDER_RATIO = R2 / (R1 + R2);  // 0.6875
+const float R1 = 970.0;
+const float R2 = 2560.0;
+const float DIVIDER_RATIO = R2 / (R1 + R2);
 
 // MPX5700AP sensor specifications
 // Official transfer function: Vout = Vs * (0.0012858 * P + 0.04)
@@ -22,50 +20,47 @@ const bool USE_CALIBRATION = false;
 
 // Filtering
 const int NUM_SAMPLES = 100;       // Number of samples for averaging
-float pressureHistory[NUM_SAMPLES];
+
 int historyIndex = 0;
 
 
 namespace pressure {
-void initPressureReader() {
-  for (int i = 0; i < NUM_SAMPLES; i++) {
-    pressureHistory[i] = 0;
+  void initPressureReader() {      
+    Serial.println("MPX5700AP Pressure Sensor");
+    Serial.println("========================");
+    delay(1000);
   }
-  
-  Serial.println("MPX5700AP Pressure Sensor");
-  Serial.println("========================");
-  delay(1000);
-}
 
-float getPressure() {
-  uint32_t vMeasuredMv = analogReadMilliVolts(PRESSURE_PIN);
-  float vMeasured = vMeasuredMv / 1000.0;
-  
-  float vSensor = vMeasured / DIVIDER_RATIO;
-  
-  float voutRatio = vSensor / VS;
-  float pressure = (voutRatio - TF_OFFSET) / TF_SLOPE;
-  
+
+  float getPressure() {
+    uint32_t pressureHistoryMv[NUM_SAMPLES];
+    float pressureSum = 0.0;
+
+    for (size_t i = 0; i < NUM_SAMPLES; i++) {
+      pressureHistoryMv[i] = analogReadMilliVolts(PRESSURE_PIN);
+      delayMicroseconds(1000);
+    }
+    float avgMv = 0.0;
+    for (size_t i = 0; i < NUM_SAMPLES; i++) {
+      avgMv += pressureHistoryMv[i];
+    }
+    avgMv /= NUM_SAMPLES;
+
+    float vMeasured = avgMv / 1000.0;
+    Serial.printf("Average measured mv: %f \n", vMeasured);
+    float vSensor = vMeasured / DIVIDER_RATIO;
+
+    float voutRatio = vSensor / VS;
+    float pressure = (voutRatio - TF_OFFSET) / TF_SLOPE;
+
     if (USE_CALIBRATION) {
-    pressure += CALIBRATION_OFFSET;
+      pressure += CALIBRATION_OFFSET;
+    }
+
+    Serial.printf("%lu, %.3f kPa\n", millis(), pressure);
+    // float pressureBar = pressure / 100.0;
+    // float pressurePsi = pressure * 0.145038;
+
+    return pressure;
   }
-    pressureHistory[historyIndex] = pressure;
-  historyIndex = (historyIndex + 1) % NUM_SAMPLES;
-    
-  float pressureFiltered = 0;
-  for (int i = 0; i < NUM_SAMPLES; i++) {
-    pressureFiltered += pressureHistory[i];
-  }
-  pressureFiltered /= NUM_SAMPLES;
-  Serial.printf("%lu,%.3f\n", millis(), pressureFiltered);
-
-  float pressureBar = pressureFiltered / 100.0;
-  float pressurePsi = pressureFiltered * 0.145038;
-  delay(10); // Read every 100ms
-
-  return pressureFiltered;
-}
-
-  
-  
 }

@@ -50,11 +50,11 @@ namespace wifi_manager {
     WiFi.begin(ssid, password);
     Serial.printf("Connecting to WiFi network %s\n", ssid.c_str());
 
-    int totalAttempts = 500 * 2 * 20;
+    int totalAttempts = 20;
     int attempts = 0;
     while (WiFi.status() != WL_CONNECTED && attempts <= totalAttempts ) {
       Serial.printf("Connecting... %u; attempt nr %d of %d \n", WiFi.status(), attempts, totalAttempts);
-      delay(500);
+      delay(1000);
       ledBlinker.tick();
       attempts++;
     }
