@@ -25,7 +25,6 @@ ModbusTCP mb;            // client
 uint16_t hregs[4] = {0}; // example read buffer
 #endif
 
-
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 

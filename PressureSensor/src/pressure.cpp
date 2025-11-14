@@ -8,8 +8,8 @@ const float R2 = 2560.0;
 const float DIVIDER_RATIO = R2 / (R1 + R2);
 
 // MPX5700AP sensor specifications
-// Official transfer function: Vout = Vs * (0.0012858 * P + 0.04)
-// Solving for P: P = (Vout/Vs - 0.04) / 0.0012858
+// Vout = Vs * (0.0012858 * P + 0.04)
+// P = (Vout/Vs - 0.04) / 0.0012858
 const float VS = 5.0;             // Supply voltage
 const float TF_SLOPE = 0.0012858; // Transfer function slope
 const float TF_OFFSET = 0.04;     // Transfer function offset
