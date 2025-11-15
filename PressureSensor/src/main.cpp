@@ -2,7 +2,7 @@
 #include <Preferences.h>
 #include <ESPAsyncWebServer.h>
 #include <LittleFS.h>
-#include <ModbusTCP.h>
+#include <ModbusIP_ESP8266.h>
 #include <sys/types.h>
 #include <cmath>
 #include "crgb.h"
@@ -15,15 +15,12 @@
 #include "pressure.h"
 #include "http_server.h"
 
-//#define ENABLE_MODBUS
 
-#ifdef ENABLE_MODBUS
 IPAddress SERVER_IP(192,168,10,21);
 const uint16_t SERVER_PORT = 502;   // Modbus TCP default
 const uint8_t  UNIT_ID     = 1;     // UR usually ignores, but 1 is fine
-ModbusTCP mb;            // client
+
 uint16_t hregs[4] = {0}; // example read buffer
-#endif
 
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
@@ -32,10 +29,15 @@ Preferences prefs;
 LedBlinker led_blinker;
 utils::Timer timer{1000, millis()};
 
-utils::Timer pressureTimer{1000, millis()};
+utils::Timer pressureTimer{100, millis()};
 
 utils::StateMachine state{State::NOOP};
 storage::WifiCredentials wifi_creds;
+
+IPAddress modbusServer(10, 8, 0, 1);
+const uint16_t modbusPort = 502;
+ModbusIP mb;
+const uint16_t unitId = 1;
 
 void setPixel(LedRGB rgb) {
   M5.dis.drawpix(0, CRGB(rgb.r, rgb.g, rgb.b));
@@ -83,12 +85,8 @@ void setup() {
       state.change_to(State::OP_CONNECT_WAIT);
       http_server::init_client_http_server(server, ws);
       pressure::initPressureReader();
-#ifdef ENABLE_MODBUS
-      mb.server();
-      mb.addHreg(0, 0, 1);
-      mb.connect(SERVER_IP, SERVER_PORT);
+      mb.client();
       Serial.println("Modbus TCP client ready");
-#endif
     } else {
       Serial.println("Unable to connect to wifi networkd. Deleting preferences and restarting");
       storage::clear_wifi_credentials();
@@ -118,32 +116,39 @@ void loop() {
     }
     break;
   case OP_CONNECT_WAIT:
-#ifdef ENABLE_MODBUS
+
+    if (!mb.isConnected(modbusServer)) {
+      Serial.println("Connecting to modbus");
+      mb.connect(modbusServer);
+      return;
+    }
+
+    if (M5.Btn.isPressed()) {
+      Serial.println("PRESSED");
+      mb.writeCoil(modbusServer, 0, true, nullptr, unitId);
+    } else {
+      mb.writeCoil(modbusServer, 0, false, nullptr, unitId);
+    }
+    
     mb.task();
-#endif
+    
     if (timer.ready()) {
       Serial.println(WiFi.localIP());
-#ifdef ENABLE_MODBUS
-      if (!mb.isConnected(SERVER_IP)) {
-        Serial.println("Reconnecting…");
-        mb.connect(SERVER_IP, SERVER_PORT);
-        
-        return;
-      }
-      if (M5.Btn.wasPressed()) {
-        float pressure_read = pressure::getPressure();
-        uint16_t res = static_cast<uint16_t>(std::round(pressure_read));
-        mb.Hreg(0, res);
-      }
-#endif
+    }
+    mb.Coil(3, M5.Btn.wasPressed());
+    if (timer.ready()) {
+      
     }
     if (pressureTimer.ready()) {
       float pressure_read = pressure::getPressure();
       auto message = String(pressure_read);
       // here we send the data to the websocket. On the other hand, we need to connect to the same socket
       ws.textAll(message);
+      uint16_t pressureModbus = static_cast<uint16_t>(pressure_read);
+      Serial.printf("Scaled pressure reads: %d", pressureModbus);
+      mb.writeHreg(modbusServer, 0, pressureModbus, nullptr, unitId);
     }
-
+    delay(10);
     break;
   default:
     if (timer.ready()) {
