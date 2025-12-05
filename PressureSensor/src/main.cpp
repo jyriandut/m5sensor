@@ -1,10 +1,11 @@
 #include <M5Atom.h>
+#include <Arduino.h>
 #include <Preferences.h>
 #include <ESPAsyncWebServer.h>
 #include <LittleFS.h>
 #include <ModbusIP_ESP8266.h>
 #include <sys/types.h>
-#include <cmath>
+#include "HardwareSerial.h"
 #include "crgb.h"
 #include "esp32-hal.h"
 #include "led_blinker.h"
@@ -15,21 +16,14 @@
 #include "pressure.h"
 #include "http_server.h"
 
-
-IPAddress SERVER_IP(192,168,10,21);
-const uint16_t SERVER_PORT = 502;   // Modbus TCP default
-const uint8_t  UNIT_ID     = 1;     // UR usually ignores, but 1 is fine
-
-uint16_t hregs[4] = {0}; // example read buffer
-
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
 
 Preferences prefs;
 LedBlinker led_blinker;
-utils::Timer timer{1000, millis()};
+utils::Timer timer{1000, static_cast<uint32_t>(millis())};
 
-utils::Timer pressureTimer{100, millis()};
+utils::Timer pressureTimer {1000, static_cast<uint32_t>(millis())};
 
 utils::StateMachine state{State::NOOP};
 storage::WifiCredentials wifi_creds;
@@ -50,9 +44,10 @@ void setup() {
   led_blinker.init(setPixel);
 
   led_blinker.set_blink(COLOR_ORANGE,COLOR_BLACK);
-  
+
   if (!LittleFS.begin(true)) {
-    Serial.println("[ERROR]: Error has occurred with serial filesystem");
+    String hello = "Hello world";
+    Serial.println(hello);
     return;
   }
 
@@ -77,13 +72,22 @@ void setup() {
     led_blinker.set_blink(COLOR_ORANGE, COLOR_BLACK);
     break;
   case OPERATION_MODE: {
+    if (!storage::has_wifi_credentials()) {
+      Serial.println("Invalid credentials, entering provisioning mode");
+      storage::clear_wifi_credentials();
+      state.change_to(State::PROVISIONING_MODE);
+      return;
+    }
     storage::load_wifi_credentials(wifi_creds);
     auto connected =
         wifi_manager::init_sta_wifi(wifi_creds.ssid, wifi_creds.pass, led_blinker);    
     
     if (connected) {
+      bool is_server_created = http_server::init_client_http_server(server, ws);
+      if (!is_server_created) {
+        return;
+      }
       state.change_to(State::OP_CONNECT_WAIT);
-      http_server::init_client_http_server(server, ws);
       pressure::initPressureReader();
       mb.client();
       Serial.println("Modbus TCP client ready");
@@ -110,13 +114,12 @@ void loop() {
   led_blinker.tick();
   
   switch (state.state) {
-  case PM_CONNECT_WAIT:
+  case PM_CONNECT_WAIT: // Provision mode loop
     if (timer.ready()) {
       Serial.println("One tick every 1 second");
     }
     break;
-  case OP_CONNECT_WAIT:
-
+  case OP_CONNECT_WAIT: // Operational mode loop
     if (!mb.isConnected(modbusServer)) {
       Serial.println("Connecting to modbus");
       mb.connect(modbusServer);
@@ -136,17 +139,13 @@ void loop() {
       Serial.println(WiFi.localIP());
     }
     mb.Coil(3, M5.Btn.wasPressed());
-    if (timer.ready()) {
-      
-    }
+    
     if (pressureTimer.ready()) {
-      float pressure_read = pressure::getPressure();
+      auto pressure_read = pressure::get_pressure_uint();
       auto message = String(pressure_read);
       // here we send the data to the websocket. On the other hand, we need to connect to the same socket
-      ws.textAll(message);
-      uint16_t pressureModbus = static_cast<uint16_t>(pressure_read);
-      Serial.printf("Scaled pressure reads: %d", pressureModbus);
-      mb.writeHreg(modbusServer, 0, pressureModbus, nullptr, unitId);
+      ws.textAll(message);      
+      mb.writeHreg(modbusServer, 0, pressure_read, nullptr, unitId);
     }
     delay(10);
     break;

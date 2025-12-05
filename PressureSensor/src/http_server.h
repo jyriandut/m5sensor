@@ -7,5 +7,5 @@
 
 namespace http_server {
   void init_ap_http_server(AsyncWebServer& server, LedBlinker& led_blinker);
-  void init_client_http_server(AsyncWebServer& server, AsyncWebSocket& ws);
+  bool init_client_http_server(AsyncWebServer& server, AsyncWebSocket& ws);
 }

@@ -19,14 +19,26 @@
     <header class="grid">
       <h1>Live Pressure</h1>
     </header>
-
-    <section id="chartWrap" style="height:280px">
-      <canvas x-ref="chart" width="800" height="280"></canvas>
+    <section id="token" x-show="!hasToken()">
+      <div>
+        <label>Token</label>
+        <input type="password" x-model="token" />
+        <button
+            @click="saveToken"
+            :aria-busy="busy"
+            :disabled="busy"
+         >Save token</button>
+      </div>      
     </section>
-
-    <footer>
-      <small>Last value: <strong x-text="dataPoints.at(-1) ?? '—'"></strong> kPa</small>
-    </footer>
+    <div x-show="hasToken()">
+      <!-- <section id="chartWrap" style="height:280px"> -->
+      <!--   <canvas x-ref="chart" width="800" height="280"></canvas> -->
+      <!-- </section> -->
+      <footer>
+        <small>Last value: <strong x-text="pressureValue"></strong> kPa</small>
+      </footer>
+    </div>
+    
   </main>
 </body>
 </html>

@@ -31,7 +31,12 @@ namespace pressure {
     delay(1000);
   }
 
-
+  uint16_t get_pressure_uint() {
+    float pressure_read = getPressure();
+    auto pressureInt = static_cast<uint16_t>(pressure_read);
+    return pressureInt;
+  }
+  
   float getPressure() {
     uint32_t pressureHistoryMv[NUM_SAMPLES];
     float pressureSum = 0.0;

@@ -38,8 +38,12 @@ namespace storage {
       Serial.println("ssid key not found in preferences");
       result = false;
     }
-    else if (prefs.getString("ssid").equals(String())) {
+    if (prefs.getString("ssid").equals(String())) {
       Serial.println("ssid key value empty");
+      result = false;
+    }
+    if (!prefs.isKey("token") || prefs.getString("token").equals(String())) {
+      Serial.println("token key not found in preferences");
       result = false;
     }
     prefs.end();

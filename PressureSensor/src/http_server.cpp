@@ -1,12 +1,14 @@
 // http_server.cpp
 #include "http_server.h"
+#include "Arduino.h"
 #include "wifi_manager.h"
 #include "storage.h"
-
+#include "pressure.h"
 #include <LittleFS.h>
 #include <ESPAsyncWebServer.h>
 #include <ArduinoJson.h>
 
+#define API_TOKEN_NAME "M5-Api-Key"
 // --- Helpers ---
 inline void send_json(AsyncWebServerRequest* req, const JsonDocument &doc, int code = 200) {
   String out; serializeJson(doc, out);
@@ -18,15 +20,28 @@ inline void send_plain(AsyncWebServerRequest* req, String message, int code = 20
 
 namespace http_server {
 
-  void init_ap_http_server(AsyncWebServer &server, LedBlinker& led_blinker) {
-    // ---------- GET /api/led ----------
+  storage::WifiCredentials wifiCreds;
+
+  bool validate_request(AsyncWebServerRequest* req) {
+    auto header = req->getHeader(API_TOKEN_NAME);
+    const String keyValue = header->value();
+    Serial.println("Key from header " + keyValue);
+    Serial.println("Creds from header " + wifiCreds.token);
+    if (!keyValue.equals(wifiCreds.token)) {
+      Serial.println("Tokens don't match");
+      send_plain(req, "Unauthorized", 403);
+      return false;
+    }
+    return true;
+  }
+  
+  void init_ap_http_server(AsyncWebServer &server, LedBlinker &led_blinker) {
     server.on("/api/led", HTTP_GET, [&led_blinker](AsyncWebServerRequest *req) {
       JsonDocument doc;
       doc["color"] = led::rgbToHex(led_blinker.colorSolid);
       send_json(req, doc, 200);
     });
 
-    // ---------- POST /api/led  (expects {"color":"#RRGGBB"}) ----------
     server.on(
       "/api/led",
       HTTP_POST,
@@ -36,6 +51,10 @@ namespace http_server {
       [&led_blinker](AsyncWebServerRequest* req, uint8_t* data, size_t len, size_t index, size_t total) {
         if (index + len != total) return;
 
+        if (!req->hasHeader(API_TOKEN_NAME)) {
+          send_plain(req, "Unauthorized", 403); return;
+        }
+        
         if (!req->contentType().equalsIgnoreCase("application/json")) {
           send_plain(req, "Expected Content-Type: application/json", 415);
           return;
@@ -106,12 +125,18 @@ namespace http_server {
 
         const char *ssid = payload["ssid"];
         const char *pass = payload["pass"] | "";
+        const char *token = payload["token"];
 
-        if (!ssid || !ssid[0]) { send_plain(req, "Missing 'ssid'", 400); return; }
+        if (!ssid || !ssid[0]) {
+          send_plain(req, "Missing 'ssid'", 400);
+          return;
+        }
+        if (!token || !token[0]) { send_plain(req, "Missing 'token'", 400); return; }
 
         storage::WifiCredentials wifi_creds;
         wifi_creds.ssid = ssid;
         wifi_creds.pass = pass;
+        wifi_creds.token = token;
 
         storage::clear_wifi_credentials();
         if (!storage::save_wifi_credentials(wifi_creds)) {
@@ -138,11 +163,30 @@ namespace http_server {
     server.begin();
   }
 
-  void init_client_http_server(AsyncWebServer &server, AsyncWebSocket& ws) {
+  bool init_client_http_server(AsyncWebServer &server, AsyncWebSocket &ws) {
+    storage::load_wifi_credentials(wifiCreds);
+
+    if (wifiCreds.token == "" || wifiCreds.token == nullptr) {
+      Serial.println("API token not available. Resetting back to Provisioning mode");
+      return false;
+    }
+    
     server.onNotFound([](AsyncWebServerRequest *req) {
       send_plain(req, "Not Found", 404);
     });
 
+    server.on("/api/pressure", HTTP_GET, [](AsyncWebServerRequest *req) {
+      if (!http_server::validate_request(req)) {
+        Serial.println("Request is not valid");
+        return;
+      }
+      JsonDocument doc;
+
+      float pressure = pressure::get_pressure_uint();
+      doc["pressure"] = pressure;
+      send_json(req, doc, 200);
+    });
+    
     server.serveStatic("/", LittleFS, "/")
         .setDefaultFile("main.html")
         .setCacheControl("public, max-age=86400");
@@ -150,6 +194,7 @@ namespace http_server {
     
     server.addHandler(&ws);
     server.begin();
+    return true;
   }
   
 }
