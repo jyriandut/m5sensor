@@ -1,0 +1,107 @@
+---
+- name: Install and configure InfluxDB 2.x on Ubuntu/Debian
+  hosts: vpn_server          # change to your host/group
+  become: true
+  gather_facts: true
+
+  vars:
+    # Admin setup variables – CHANGE THESE
+    influxdb_admin_user: "admin"
+    influxdb_admin_password: "supersecretpassword"
+    influxdb_admin_token: "supersecrettoken"
+    influxdb_org: "narbot"
+    influxdb_bucket: "narbot-bucket"
+
+    # InfluxData key pairs from official docs
+    influxdb_keypair_new:
+      url: "https://repos.influxdata.com/influxdata-archive.key"
+      fingerprint: "24C975CBA61A024EE1B631787C3D57159FC2F927"
+    influxdb_keypair_compat:
+      url: "https://repos.influxdata.com/influxdata-archive_compat.key"
+      fingerprint: "9D539D90D3328DC7D6C8D3B9D8FF8E1F7DF8B07E"
+
+  tasks:
+    - name: Choose appropriate InfluxData key for this OS
+      ansible.builtin.set_fact:
+        influxdb_key_url: >-
+          {{ influxdb_keypair_new.url
+             if (ansible_distribution == "Ubuntu" and ansible_distribution_version is version("20.04", ">="))
+             or (ansible_distribution == "Debian" and ansible_distribution_version is version("10", ">="))
+             else influxdb_keypair_compat.url }}
+        influxdb_key_fingerprint: >-
+          {{ influxdb_keypair_new.fingerprint
+             if (ansible_distribution == "Ubuntu" and ansible_distribution_version is version("20.04", ">="))
+             or (ansible_distribution == "Debian" and ansible_distribution_version is version("10", ">="))
+             else influxdb_keypair_compat.fingerprint }}
+
+    - name: Ensure required tools for InfluxData repo are installed
+      ansible.builtin.apt:
+        name:
+          - curl
+          - gnupg
+          - ca-certificates
+        state: present
+        update_cache: yes
+
+    - name: Ensure APT keyrings directory exists
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Add InfluxData APT key and repository (Ubuntu/Debian)
+      ansible.builtin.shell: |
+        set -e
+        cd /tmp
+        key_file="$(basename {{ influxdb_key_url }})"
+
+        # Download key
+        curl --silent --location -O "{{ influxdb_key_url }}"
+
+        # Sanity-check fingerprint (fails if wrong key)
+        gpg --show-keys --with-fingerprint --with-colons "./${key_file}" 2>&1 \
+          | grep -q "{{ influxdb_key_fingerprint }}"
+
+        # Convert to keyring and install
+        cat "${key_file}" \
+          | gpg --dearmor \
+          | tee /etc/apt/keyrings/influxdata-archive.gpg > /dev/null
+
+        # Add InfluxData repository
+        echo 'deb [signed-by=/etc/apt/keyrings/influxdata-archive.gpg] https://repos.influxdata.com/debian stable main' \
+          | tee /etc/apt/sources.list.d/influxdata.list > /dev/null
+      args:
+        creates: /etc/apt/sources.list.d/influxdata.list
+
+    - name: Update APT cache after adding InfluxData repo
+      ansible.builtin.apt:
+        update_cache: yes
+
+    - name: Install InfluxDB 2 server and CLI
+      ansible.builtin.apt:
+        name:
+          - influxdb2
+          - influxdb2-cli
+        state: present
+
+    - name: Enable and start InfluxDB service
+      ansible.builtin.service:
+        name: influxdb
+        enabled: yes
+        state: started
+
+    # Package install default bolt path for v2 (from official file system layout docs)
+    - name: Run initial InfluxDB setup (org, bucket, admin user) only once
+      ansible.builtin.shell: |
+        influx setup \
+          --username {{ influxdb_admin_user }} \
+          --password '{{ influxdb_admin_password }}' \
+          --org {{ influxdb_org }} \
+          --bucket {{ influxdb_bucket }} \
+          --token {{ influxdb_admin_token }} \
+          --force
+        touch /var/lib/influxdb/.influxdb2_setup_done
+      args:
+        creates: /var/lib/influxdb/.influxdb2_setup_done

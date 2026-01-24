@@ -1,0 +1,4 @@
+fastapi[standard]
+jinja2
+influxdb-client
+fastapi_mqtt

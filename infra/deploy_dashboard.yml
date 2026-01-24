@@ -1,0 +1,126 @@
+---
+- name: Deploy FastAPI dashboard server into home directory
+  hosts: vpn_server
+  become: true
+  gather_facts: true
+
+  vars:
+    app_user: "jyriand"
+    home_dir: "/home/jyriand"
+
+    # local path on the machine where you run ansible from
+    local_app_dir: "../dashboard-server"
+
+    # remote paths
+    app_dir: "{{ home_dir }}/dashboard-server"
+    venv_dir: "{{ app_dir }}/venv"
+
+    # FastAPI / uvicorn config
+    app_port: 8000
+    # Change this to how you normally run uvicorn, e.g. "main:app" or "app.main:app"
+    app_asgi: "server:app"
+
+  tasks:
+    - name: Install system dependencies
+      ansible.builtin.apt:
+        name:
+          - python3
+          - python3-venv
+          - python3-pip
+          - rsync
+        state: present
+        update_cache: yes
+
+    - name: Ensure app directory exists
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0755"
+
+    # --- Sync code from your local machine to the server ---
+
+    - name: Sync dashboard-server code from local to remote
+      become: false
+      delegate_to: localhost
+      ansible.builtin.synchronize:
+        src: "{{ local_app_dir }}/"
+        dest: "{{ app_dir }}/"
+        delete: true
+        recursive: true
+        mode: push
+        rsync_opts:
+          - "--exclude=venv"
+          - "--exclude=.venv"
+          - "--exclude=__pycache__"
+          - "--exclude=.git"
+
+    - name: Ensure correct ownership of app directory
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        recurse: true
+
+    # --- Virtualenv + requirements ---
+
+    - name: Create virtual environment (if not exists)
+      ansible.builtin.command:
+        cmd: python3 -m venv "{{ venv_dir }}"
+        creates: "{{ venv_dir }}/bin/activate"
+      become_user: "{{ app_user }}"
+
+    - name: Check if requirements.txt exists
+      ansible.builtin.stat:
+        path: "{{ app_dir }}/requirements.txt"
+      register: reqfile
+
+    - name: Install Python dependencies into venv
+      ansible.builtin.pip:
+        requirements: "{{ app_dir }}/requirements.txt"
+        executable: "{{ venv_dir }}/bin/pip"
+      become_user: "{{ app_user }}"
+      when: reqfile.stat.exists
+
+    # --- systemd service ---
+
+    - name: Create systemd service for dashboard FastAPI
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/dashboard.service
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Dashboard FastAPI server
+          After=network.target
+
+          [Service]
+          User={{ app_user }}
+          WorkingDirectory={{ app_dir }}
+          Environment="PATH={{ venv_dir }}/bin"
+          ExecStart={{ venv_dir }}/bin/uvicorn {{ app_asgi }} --host 0.0.0.0 --port {{ app_port }}
+          Restart=always
+          RestartSec=3
+
+          [Install]
+          WantedBy=multi-user.target
+      notify:
+        - Reload systemd
+        - Restart dashboard service
+
+    - name: Enable dashboard.service at boot
+      ansible.builtin.systemd:
+        name: dashboard.service
+        enabled: true
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.command: systemctl daemon-reload
+
+    - name: Restart dashboard service
+      ansible.builtin.systemd:
+        name: dashboard.service
+        state: restarted

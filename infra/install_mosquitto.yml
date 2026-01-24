@@ -1,0 +1,52 @@
+---
+- name: Install Mosquitto MQTT broker on Ubuntu
+  hosts: vpn_server
+  become: true
+
+  vars:
+    mosquitto_listen_port: 1883
+    mosquitto_allow_anonymous: "true"   # set to "false" if you’ll use auth
+
+  tasks:
+    - name: Update APT cache
+      ansible.builtin.apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install Mosquitto broker and clients
+      ansible.builtin.apt:
+        name:
+          - mosquitto
+          - mosquitto-clients
+        state: present
+
+    - name: Ensure Mosquitto config directory exists
+      ansible.builtin.file:
+        path: /etc/mosquitto/conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Deploy basic Mosquitto configuration
+      ansible.builtin.copy:
+        dest: /etc/mosquitto/conf.d/ansible.conf
+        content: |
+          listener {{ mosquitto_listen_port }}
+          allow_anonymous {{ mosquitto_allow_anonymous }}
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart mosquitto
+
+    - name: Enable and start Mosquitto service
+      ansible.builtin.service:
+        name: mosquitto
+        enabled: yes
+        state: started
+
+  handlers:
+    - name: Restart mosquitto
+      ansible.builtin.service:
+        name: mosquitto
+        state: restarted
