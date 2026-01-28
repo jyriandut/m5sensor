@@ -13,7 +13,6 @@ This repo contains the ESP32 firmware, dashboard server, infrastructure playbook
 ## Prerequisites
 
 - Python 3.10+
-- Node.js (for Mermaid CLI, if you want to re-render diagrams)
 - Typst (for PDF output)
 - PlatformIO / Arduino toolchain for ESP32 firmware
 - Ansible (for infrastructure automation)
@@ -98,13 +97,6 @@ Rebuild Typst PDF:
 
 ```bash
 typst compile docs/ARCHITECTURE.typ docs/ARCHITECTURE.pdf
-```
-
-Rebuild Mermaid PNGs (if needed):
-
-```bash
-PUPPETEER_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
-for f in docs/diagrams/*.mmd; do mmdc -i "$f" -o "${f%.mmd}.png"; done
 ```
 
 ## Notes
