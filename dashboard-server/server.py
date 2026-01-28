@@ -25,6 +25,7 @@ MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_USERNAME = os.getenv("MQTT_USERNAME", "")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "")
 MQTT_PRESSURE_TOPIC = os.getenv("MQTT_PRESSURE_TOPIC", "pressure/testing")
+MQTT_ENABLED = os.getenv("MQTT_ENABLED", "1") not in ("0", "false", "False")
 
 client = InfluxDBClient(
     url=INFLUX_URL,
@@ -49,9 +50,13 @@ fast_mqtt = FastMQTT(config=mqtt_config)
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
-    await fast_mqtt.mqtt_startup()
+    if MQTT_ENABLED:
+        await fast_mqtt.mqtt_startup()
+    else:
+        logger.info("MQTT is disabled via MQTT_ENABLED=0")
     yield
-    await fast_mqtt.mqtt_shutdown()
+    if MQTT_ENABLED:
+        await fast_mqtt.mqtt_shutdown()
 
 logger = logging.getLogger(__name__)
 app = FastAPI(lifespan=_lifespan)
