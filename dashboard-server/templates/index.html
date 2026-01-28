@@ -68,6 +68,24 @@
       padding: 12px;
       background: #fffdfa;
     }
+    .actions {
+      margin-top: 16px;
+      display: flex;
+      justify-content: flex-end;
+    }
+    .button {
+      display: inline-block;
+      padding: 10px 16px;
+      border: 2px solid var(--ink);
+      background: var(--accent);
+      color: #fffaf0;
+      text-decoration: none;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    .button:hover {
+      filter: brightness(0.95);
+    }
     canvas {
       display: block;
       width: 100%;
@@ -92,6 +110,9 @@
       </div>
       <div class="chart-wrap">
         <canvas id="pressure-chart"></canvas>
+      </div>
+      <div class="actions">
+        <a class="button" href="/export">Download CSV</a>
       </div>
     </div>
   </main>

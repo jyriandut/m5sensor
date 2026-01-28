@@ -1,12 +1,14 @@
 from contextlib import asynccontextmanager
+import csv
 from datetime import datetime, timezone
+import io
 import asyncio
 import os
 import logging
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
-from influxdb_client import InfluxDBClient
+from influxdb_client import InfluxDBClient, Point, WritePrecision
 from gmqtt import Client as MQTTClient
 from fastapi_mqtt import FastMQTT, MQTTConfig
 from typing import Any
@@ -90,6 +92,17 @@ async def pressure_handler(client: MQTTClient, topic: str, payload: bytes, qos: 
         latest_pressure["value"] = value
         latest_pressure["timestamp"] = datetime.now(timezone.utc).isoformat()
 
+    try:
+        point = (
+            Point("pressure")
+            .tag("topic", topic)
+            .field("value", value)
+            .time(datetime.now(timezone.utc), WritePrecision.NS)
+        )
+        write_api.write(bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=point)
+    except Exception as exc:
+        logger.exception("Failed to write pressure to InfluxDB: %s", exc)
+
 @fast_mqtt.subscribe("devices/+/init")
 async def device_status_handler(client: MQTTClient, topic: str, payload: bytes, qos: int, properties: Any):
     print("device/init: ", topic, payload.decode(), qos, properties)
@@ -105,3 +118,35 @@ async def index(request: Request):
 async def get_pressure():
     async with latest_pressure_lock:
         return dict(latest_pressure)
+
+@app.get("/export", response_class=Response)
+async def export_csv(minutes: int = 60):
+    if minutes <= 0:
+        minutes = 60
+    query = f'''
+    from(bucket: "{INFLUX_BUCKET}")
+      |> range(start: -{minutes}m)
+      |> filter(fn: (r) => r._measurement == "pressure")
+      |> filter(fn: (r) => r._field == "value")
+    '''
+    try:
+        tables = query_api.query(query, org=INFLUX_ORG)
+    except Exception as exc:
+        logger.exception("InfluxDB query failed: %s", exc)
+        return Response("InfluxDB query failed", status_code=500, media_type="text/plain")
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["time", "value", "topic"])
+    for table in tables:
+        for record in table.records:
+            writer.writerow([
+                record.get_time().isoformat(),
+                record.get_value(),
+                record.values.get("topic", ""),
+            ])
+    return Response(
+        buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=pressure.csv"},
+    )

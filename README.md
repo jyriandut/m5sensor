@@ -84,7 +84,15 @@ Playbooks:
 Run example:
 
 ```bash
-ansible-playbook -i infra/inventory.ini infra/install_mosquitto.yml
+ansible-playbook -i infra/inventory.ini --ask-become-pass infra/install_mosquitto.yml
+```
+
+Other playbooks:
+
+```bash
+ansible-playbook -i infra/inventory.ini --ask-become-pass infra/install_influxdb.yml
+ansible-playbook -i infra/inventory.ini --ask-become-pass infra/install_caddy.yml
+ansible-playbook -i infra/inventory.ini --ask-become-pass infra/deploy_dashboard.yml
 ```
 
 ## Architecture docs
