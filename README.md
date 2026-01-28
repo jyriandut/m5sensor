@@ -8,7 +8,7 @@ This repo contains the ESP32 firmware, dashboard server, infrastructure playbook
 - `dashboard-server/` – FastAPI dashboard + MQTT listener
 - `infra/` – Ansible playbooks for Mosquitto, InfluxDB, Caddy, and deploy
 - `docs/` – architecture docs + diagrams (`ARCHITECTURE.md`, `ARCHITECTURE.typ`)
-- `conf-files/` – example config files
+- `infra/conf-files/` – example config files
 
 ## Prerequisites
 
