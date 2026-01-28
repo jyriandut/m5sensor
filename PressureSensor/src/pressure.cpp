@@ -23,6 +23,28 @@ const int NUM_SAMPLES = 100;       // Number of samples for averaging
 
 int historyIndex = 0;
 
+// Simple 1D Kalman filter tuning (kPa)
+const float KALMAN_Q = 0.2f;  // Process noise
+const float KALMAN_R = 0.2f;  // Measurement noise
+
+float kalman_estimate = 0.0f;
+float kalman_error = 1.0f;
+bool kalman_initialized = false;
+
+float kalman_update(float measurement) {
+  if (!kalman_initialized) {
+    kalman_estimate = measurement;
+    kalman_error = 1.0f;
+    kalman_initialized = true;
+    return kalman_estimate;
+  }
+
+  kalman_error += KALMAN_Q;
+  float kalman_gain = kalman_error / (kalman_error + KALMAN_R);
+  kalman_estimate = kalman_estimate + kalman_gain * (measurement - kalman_estimate);
+  kalman_error = (1.0f - kalman_gain) * kalman_error;
+  return kalman_estimate;
+}
 
 namespace pressure {
   void initPressureReader() {      
@@ -62,10 +84,11 @@ namespace pressure {
       pressure += CALIBRATION_OFFSET;
     }
 
-    Serial.printf("%lu, %.3f kPa\n", millis(), pressure);
+    float filtered = kalman_update(pressure);
+    Serial.printf("%lu, %.3f kPa\n", millis(), filtered);
     // float pressureBar = pressure / 100.0;
     // float pressurePsi = pressure * 0.145038;
 
-    return pressure;
+    return filtered;
   }
 }

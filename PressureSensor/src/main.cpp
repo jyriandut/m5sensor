@@ -16,6 +16,11 @@
 #include "storage.h"
 #include "pressure.h"
 #include "http_server.h"
+#include "mqtt_module.h"
+#include "modbus_module.h"
+#include "http_server_module.h"
+#include "websocket_module.h"
+#include "pressure_module.h"
 #include "serial.h"
 #include <MQTT.h>
 #include <ArduinoJson.h>
@@ -23,7 +28,9 @@
 
 //#define SERIAL_WIFI_CONNECT
 
-#define TOPIC_NAME "pressure/data"
+const char *mqttHost = "mqtt.narbot.ee";
+const uint16_t mqttPort = 1883;
+const char *pressureTopic = "pressure/testing";
 
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
@@ -35,7 +42,7 @@ Preferences prefs;
 LedBlinker led_blinker;
 utils::Timer timer{1000, static_cast<uint32_t>(millis())};
 
-utils::Timer pressureTimer {1000, static_cast<uint32_t>(millis())};
+utils::Timer pressureTimer {20, static_cast<uint32_t>(millis())};
 
 utils::StateMachine state{State::NOOP};
 storage::WifiCredentials wifi_creds;
@@ -49,6 +56,12 @@ const char *ntpServer = "pool.ntp.org";
 
 String client_id;
 
+MqttModule mqtt_module{mqttClient, wifiClient, mqttHost, mqttPort, pressureTopic};
+ModbusModule modbus_module{mb, modbusServer, modbusPort, unitId};
+HttpServerModule http_server_module{server, ws, led_blinker};
+WebsocketModule websocket_module{ws};
+PressureModule pressure_module;
+
 void setPixel(LedRGB rgb) {
   M5.dis.drawpix(0, CRGB(rgb.r, rgb.g, rgb.b));
 }
@@ -58,6 +71,11 @@ void setup() {
   M5.begin(true, false, true);
   M5.dis.clear();
   led_blinker.init(setPixel);
+  mqtt_module.set_enabled(ENABLE_MQTT);
+  modbus_module.set_enabled(ENABLE_MODBUS);
+  http_server_module.set_enabled(ENABLE_HTTP_SERVER);
+  websocket_module.set_enabled(ENABLE_WEBSOCKET);
+  pressure_module.set_enabled(ENABLE_PRESSURE);
   configTime(0, 0, ntpServer);
   led_blinker.set_blink(COLOR_ORANGE,COLOR_BLACK);
 
@@ -85,7 +103,7 @@ void setup() {
 
 //#ifndef SERIAL_WIFI_CONNECT
     Serial.println("AP WiFi Connect");
-    http_server::init_ap_http_server(server, led_blinker);
+    http_server_module.begin_ap();
     delay(100);
     state.change_to(State::PM_CONNECT_WAIT);
     led_blinker.set_blink(COLOR_ORANGE, COLOR_BLACK);
@@ -108,20 +126,21 @@ void setup() {
         wifi_manager::init_sta_wifi(wifi_creds.ssid, wifi_creds.pass, led_blinker);    
     
     if (connected) {
-      bool is_server_created = http_server::init_client_http_server(server, ws);
-      if (!is_server_created) {
-        return;
+      if (http_server_module.enabled()) {
+        bool is_server_created =
+            http_server_module.begin_client(pressure_module.enabled() ? &pressure::get_pressure_uint : nullptr);
+        if (!is_server_created) {
+          return;
+        }
       }
       state.change_to(State::OP_CONNECT_WAIT);
-      pressure::initPressureReader();
-      Serial.print("Connecting to the mqtt server");
-      mqttClient.begin("mqtt.narbot.ee", wifiClient);
+      pressure_module.begin();
+      if (mqtt_module.enabled()) {
+        Serial.print("Connecting to the mqtt server");
+      }
       auto device_id = utils::get_short_device_id();
       client_id = String("M5_Atom_") + device_id;
-      while (!mqttClient.connect(client_id.c_str())) {
-        Serial.print(".");
-        delay(1000);
-      }
+      mqtt_module.begin(client_id);
       String topic = "devices/" + client_id + "/init";
       JsonDocument doc;
       doc["id"] = client_id;
@@ -131,10 +150,12 @@ void setup() {
       size_t n = serializeJson(doc, buf);
       Serial.println("Sending to: device/" + client_id + "/init");
       Serial.println("Message:" + String(buf));
-      mqttClient.publish(topic.c_str(), buf, n);
-          
-      mb.client();
-      Serial.println("Modbus TCP client ready");
+      mqtt_module.publish_raw(topic, buf, n);
+      
+      modbus_module.begin();
+      if (modbus_module.enabled()) {
+        Serial.println("Modbus TCP client ready");
+      }
     } else {
       Serial.println("Unable to connect to wifi networkd. Deleting preferences and restarting");
       storage::clear_wifi_credentials();
@@ -164,36 +185,32 @@ void loop() {
     }
     break;
   case OP_CONNECT_WAIT: // Operational mode loop
-    if (!mb.isConnected(modbusServer)) {
+    if (!modbus_module.ensure_connected()) {
       Serial.println("Connecting to modbus");
-      mb.connect(modbusServer);
       return;
     }
 
     if (M5.Btn.isPressed()) {
       Serial.println("PRESSED");
       utils::readMacAddress();
-      mb.writeCoil(modbusServer, 0, true, nullptr, unitId);
-    } else {
-      mb.writeCoil(modbusServer, 0, false, nullptr, unitId);
     }
-    
-    mb.task();
+    modbus_module.update_button(M5.Btn.isPressed(), M5.Btn.wasPressed());
+    modbus_module.loop();
     
     if (timer.ready()) {
       Serial.println(WiFi.localIP());
     }
-    mb.Coil(3, M5.Btn.wasPressed());
+    mqtt_module.loop();
     
-    if (pressureTimer.ready()) {
-      auto pressure_read = pressure::get_pressure_uint();
+    if (pressureTimer.ready() && pressure_module.enabled()) {
+      float pressure_read = pressure_module.read_float();
       Serial.printf("Sending data to mqtt");
 
-      auto message = String(pressure_read);
-      mqttClient.publish("pressure/testing", pressure_read);
+      auto message = String(pressure_read, 2);
       // here we send the data to the websocket. On the other hand, we need to connect to the same socket
-      ws.textAll(message);      
-      mb.writeHreg(modbusServer, 0, pressure_read, nullptr, unitId);
+      mqtt_module.publish_pressure(message);
+      websocket_module.send(message);
+      modbus_module.write_pressure(static_cast<uint16_t>(pressure_read));
     }
     delay(10);
     break;

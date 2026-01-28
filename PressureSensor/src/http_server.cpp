@@ -21,6 +21,7 @@ inline void send_plain(AsyncWebServerRequest* req, String message, int code = 20
 namespace http_server {
 
   storage::WifiCredentials wifiCreds;
+  static PressureReader pressure_reader = nullptr;
 
   bool validate_request(AsyncWebServerRequest* req) {
     auto header = req->getHeader(API_TOKEN_NAME);
@@ -163,8 +164,9 @@ namespace http_server {
     server.begin();
   }
 
-  bool init_client_http_server(AsyncWebServer &server, AsyncWebSocket &ws) {
+  bool init_client_http_server(AsyncWebServer &server, AsyncWebSocket &ws, PressureReader reader) {
     storage::load_wifi_credentials(wifiCreds);
+    pressure_reader = reader;
 
     if (wifiCreds.token == "" || wifiCreds.token == nullptr) {
       Serial.println("API token not available. Resetting back to Provisioning mode");
@@ -180,9 +182,13 @@ namespace http_server {
         Serial.println("Request is not valid");
         return;
       }
+      if (!pressure_reader) {
+        send_plain(req, "Pressure module disabled", 503);
+        return;
+      }
       JsonDocument doc;
 
-      float pressure = pressure::get_pressure_uint();
+      float pressure = pressure_reader();
       doc["pressure"] = pressure;
       send_json(req, doc, 200);
     });

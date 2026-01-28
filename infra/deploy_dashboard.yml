@@ -29,7 +29,7 @@
           - python3-pip
           - rsync
         state: present
-        update_cache: yes
+        update_cache: no
 
     - name: Ensure app directory exists
       ansible.builtin.file:

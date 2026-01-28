@@ -1,14 +1,14 @@
 from contextlib import asynccontextmanager
-from datetime import datetime, datetime
+from datetime import datetime, timezone
+import asyncio
 import os
+import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from influxdb_client import InfluxDBClient, Point, WritePrecision
+from influxdb_client import InfluxDBClient
 from gmqtt import Client as MQTTClient
 from fastapi_mqtt import FastMQTT, MQTTConfig
-import logging
 from typing import Any
 
 # --------------------
@@ -24,6 +24,7 @@ MQTT_HOST = os.getenv("MQTT_HOST", "mqtt.narbot.ee")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_USERNAME = os.getenv("MQTT_USERNAME", "")
 MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "")
+MQTT_PRESSURE_TOPIC = os.getenv("MQTT_PRESSURE_TOPIC", "pressure/testing")
 
 client = InfluxDBClient(
     url=INFLUX_URL,
@@ -52,15 +53,17 @@ async def _lifespan(_app: FastAPI):
     yield
     await fast_mqtt.mqtt_shutdown()
 
-logger = logging.getLogger
+logger = logging.getLogger(__name__)
 app = FastAPI(lifespan=_lifespan)
 templates = Jinja2Templates(directory="templates")
 
+latest_pressure = {"value": None, "timestamp": None}
+latest_pressure_lock = asyncio.Lock()
 
 
 @fast_mqtt.on_connect()
 def handle_connect(client, flags, rc, properties):
-    pprint("Connected to MQTT with code:", rc)
+    logger.info("Connected to MQTT with code: %s", rc)
 
 @fast_mqtt.on_disconnect()
 def handle_disconnect(client, packet, exc=None):
@@ -68,7 +71,19 @@ def handle_disconnect(client, packet, exc=None):
 
 @fast_mqtt.on_subscribe()
 def handle_subscribe(client, mid, qos, properties):
-    print("Subscribed, mid =", mid, "qos =", qos)
+    logger.info("Subscribed, mid=%s qos=%s", mid, qos)
+
+@fast_mqtt.subscribe(MQTT_PRESSURE_TOPIC)
+async def pressure_handler(client: MQTTClient, topic: str, payload: bytes, qos: int, properties: Any):
+    try:
+        message = payload.decode().strip()
+        value = float(message)
+    except Exception:
+        return
+
+    async with latest_pressure_lock:
+        latest_pressure["value"] = value
+        latest_pressure["timestamp"] = datetime.now(timezone.utc).isoformat()
 
 @fast_mqtt.subscribe("devices/+/init")
 async def device_status_handler(client: MQTTClient, topic: str, payload: bytes, qos: int, properties: Any):
@@ -77,4 +92,11 @@ async def device_status_handler(client: MQTTClient, topic: str, payload: bytes, 
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse(request=request, name="index.html")
+    async with latest_pressure_lock:
+        data = dict(latest_pressure)
+    return templates.TemplateResponse(request=request, name="index.html", context={"pressure": data})
+
+@app.get("/api/pressure")
+async def get_pressure():
+    async with latest_pressure_lock:
+        return dict(latest_pressure)

@@ -9,3 +9,8 @@
 #define COLOR_ORANGE {120, 255, 0}
 #define COLOR_BLACK {0,0,0}
 
+constexpr bool ENABLE_MQTT = true;
+constexpr bool ENABLE_MODBUS = true;
+constexpr bool ENABLE_HTTP_SERVER = true;
+constexpr bool ENABLE_WEBSOCKET = true;
+constexpr bool ENABLE_PRESSURE = true;
