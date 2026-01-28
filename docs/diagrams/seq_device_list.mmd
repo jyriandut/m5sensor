@@ -1,0 +1,10 @@
+sequenceDiagram
+  participant Browser as Browser
+  participant Flask as Flask Server
+  participant Influx as InfluxDB
+
+  Browser->>Caddy: GET /
+  Caddy->>Flask: reverse_proxy 127.0.0.1:8000
+  Flask->>Influx: query last status
+  Influx-->>Flask: result
+  Flask-->>Browser: HTML + data (Jinja2)

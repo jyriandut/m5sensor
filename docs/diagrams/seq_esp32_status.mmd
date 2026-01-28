@@ -1,0 +1,27 @@
+sequenceDiagram
+  participant ESP32 as ESP32
+  participant MQTT as MQTT Broker
+  participant Listener as MQTT Listener
+  participant Influx as InfluxDB
+
+  ESP32->>ESP32: mõõtmine → buffer
+  ESP32->>MQTT: publish buffer[0] (VPN)
+  MQTT-->>ESP32: OK
+  ESP32->>ESP32: eemalda buffer[0]
+  MQTT->>Listener: forward
+  Listener->>Influx: write
+
+  ESP32->>ESP32: mõõtmine → buffer
+  ESP32->>MQTT: publish buffer[0]
+  MQTT--x ESP32: WiFi katkeb, FAIL
+
+  ESP32->>ESP32: mõõtmine → buffer
+  ESP32->>ESP32: mõõtmine → buffer
+
+  Note over ESP32: WiFi taastub
+  ESP32->>MQTT: publish buffer[0]
+  MQTT-->>ESP32: OK
+  ESP32->>ESP32: eemalda buffer[0]
+  ESP32->>MQTT: publish buffer[1]
+  MQTT-->>ESP32: OK
+  ESP32->>ESP32: eemalda buffer[1]

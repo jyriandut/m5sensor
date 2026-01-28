@@ -1,0 +1,13 @@
+sequenceDiagram
+  participant Button as Nupp
+  participant ESP32 as ESP32 Loogika
+  participant Caddy as Caddy
+  participant MQTT as MQTT Broker
+  participant Listener as MQTT Listener
+  participant Influx as InfluxDB
+
+  Button->>ESP32: press (GPIO interrupt)
+  ESP32->>ESP32: toggle valve state (GPIO)
+  ESP32->>MQTT: publish topic sensors/{uid}/status\n{"valve_state":"open","pressure_30ms_ago":2.1,"pressure_now":4.8}
+  MQTT->>Listener: forward
+  Listener->>Influx: write Point(...)

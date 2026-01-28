@@ -1,0 +1,24 @@
+flowchart TB
+  classDef ui fill:#FFF3E0,stroke:#E65100,stroke-width:1px;
+  classDef service fill:#E8EAF6,stroke:#3F51B5,stroke-width:1px;
+  classDef db fill:#F3E5F5,stroke:#6A1B9A,stroke-width:1px;
+  classDef mqtt fill:#E0F7FA,stroke:#00796B,stroke-width:1px;
+
+  Browser["Kasutaja brauser<br/>(HTML, CSS, Chart.js)"]:::ui
+  Caddy["Caddy reverse proxy<br/>TLS :443"]:::service
+  Flask["Flask veebirakendus<br/>Routes:<br/>- /<br/>- /device/&lt;id&gt;/history<br/>- /export"]:::service
+  Jinja["Jinja2 template rendering"]:::service
+  InfluxClient["InfluxDB client library<br/>(päringud, lugemine)"]:::service
+  Influx["InfluxDB :8086<br/>Bucket: syringe_bucket<br/>Measurement: device_status"]:::db
+  Listener["MQTT Listener<br/>(Python script/thread)"]:::mqtt
+  Broker["Mosquitto MQTT Broker :1883"]:::mqtt
+  ESP32["ESP32 seadmed<br/>(PubSubClient)"]:::mqtt
+
+  Browser -->|HTTPS :443| Caddy
+  Caddy -->|reverse_proxy 127.0.0.1:8000| Flask
+  Caddy -->|reverse_proxy 10.8.0.2:8080| ESP32
+  Flask --> Jinja --> InfluxClient --> Influx
+  Listener --> Influx
+  Broker --> Listener
+  ESP32 -->|MQTT publish| Broker
+  class Caddy service;

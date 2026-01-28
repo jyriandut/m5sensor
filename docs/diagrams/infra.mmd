@@ -1,0 +1,40 @@
+flowchart LR
+  %% Styles
+  classDef user fill:#FFE4C4,stroke:#333,stroke-width:1px;
+  classDef network fill:#E0F7FA,stroke:#00796B,stroke-width:1px;
+  classDef cloud fill:#E8EAF6,stroke:#3F51B5,stroke-width:1px;
+  classDef device fill:#F1F8E9,stroke:#558B2F,stroke-width:1px;
+  classDef service fill:#FFF3E0,stroke:#E65100,stroke-width:1px;
+  classDef db fill:#F3E5F5,stroke:#6A1B9A,stroke-width:1px;
+  classDef auth fill:#E1BEE7,stroke:#4A148C,stroke-width:1px;
+
+  User["Kasutaja<br/>Brauser<br/>(avalik IP)"]:::user
+  Internet((Internet)):::network
+  Router["Kodune ruuter (Cudy)<br/>(NAT, väline IP)<br/>Port forward -> ESP32:8080"]:::network
+  ESP32["ESP32 seade<br/>(VPN klient: 10.8.0.2)<br/>Web server :8080"]:::device
+
+  subgraph DO["Digital Ocean droplet<br/>(VPN server + Keskserver + MQTT broker + InfluxDB)<br/>Public IP: 143.198.250.135<br/>VPN GW: 10.8.0.1"]
+    VPN["OpenVPN server"]:::auth
+    Caddy["Caddy reverse proxy<br/>TLS :443<br/>hello.narbot.ee<br/>dashboard.narbot.ee<br/>esp.narbot.ee"]:::service
+    Flask["Flask Keskserver<br/>:8000 (reverse proxy kaudu)"]:::service
+    MQTT["Mosquitto MQTT broker<br/>TCP :1883"]:::service
+    Influx["InfluxDB<br/>HTTP API :8086"]:::db
+  end
+  class DO cloud;
+
+  User -->|HTTPS :443| Internet
+  Internet --> Router
+  Router --> ESP32
+  Internet --> DO
+
+  ESP32 -->|MQTT publish :1883 VPN<br/>Staatuse sõnumid| MQTT
+  MQTT -->|Forward| Flask
+  Flask -->|Write| Influx
+  User -->|Seadmete nimekiri<br/>/ UI| Caddy
+  Caddy -->|reverse_proxy 127.0.0.1:8000| Flask
+  Caddy -->|reverse_proxy 10.8.0.2:8080| ESP32
+
+  %% Auth layers
+  ESP32 -.->|VPN autentimine<br/>OpenVPN| VPN
+  User -.->|Keskserveri login<br/>Flask username/password| Flask
+  ESP32 -.->|MQTT auth<br/>hetkel puudub| MQTT

@@ -1,0 +1,13 @@
+flowchart TB
+  classDef layer fill:#F1F8E9,stroke:#558B2F,stroke-width:1px;
+  classDef mid fill:#E3F2FD,stroke:#1565C0,stroke-width:1px;
+  classDef hw fill:#ECEFF1,stroke:#37474F,stroke-width:1px;
+
+  ESPLogic["Loogika (Arduino)<br/>- Valve control (GPIO)<br/>- Pressure reading (ADC)<br/>- MQTT publishing"]:::layer
+  ESPLibs["Library kihid<br/>- LittleFS (HTML template'id)<br/>- PubSubClient (MQTT klient)<br/>- NTPClient (aja sünkronisatsioon)"]:::layer
+  ESPFW["Arduino/ESP-IDF framework"]:::mid
+  ESPHW["ESP32 Hardware<br/>(WiFi, ADC, GPIO, Flash, NVS)"]:::hw
+
+  ESPLogic --> ESPLibs --> ESPFW --> ESPHW
+
+  ESPLogic -->|MQTT publish :1883| MQTTBroker[("Mosquitto MQTT Broker<br/>DO droplet")]:::mid
